@@ -194,3 +194,107 @@ def sample(
             continue
         values[str(props.get("id"))] = float(v)
     return values
+
+
+def window(
+    grid: GridSpec, bbox: tuple[float, float, float, float], pad: int = 1
+) -> tuple[int, int, int, int, GridSpec]:
+    """The cell window of *grid* covering *bbox* (+*pad* cells), clamped: ``(xoff, yoff, xsize, ysize, subgrid)``.
+
+    ``xoff``/``yoff`` count from the top-left (GDAL's ``-srcwin`` convention); the subgrid shares
+    *grid*'s lattice exactly, so cutting it never resamples.
+    """
+    minx, miny, maxx, maxy = bbox
+    c0 = max(0, math.floor((minx - grid.origin_x) / grid.res) - pad)
+    c1 = min(grid.width, math.ceil((maxx - grid.origin_x) / grid.res) + pad)
+    r0 = max(0, math.floor((miny - grid.origin_y) / grid.res) - pad)  # rows from the bottom
+    r1 = min(grid.height, math.ceil((maxy - grid.origin_y) / grid.res) + pad)
+    if c1 <= c0 or r1 <= r0:
+        raise SurveyError("the area lies outside the surface grid")
+    sub = GridSpec(
+        origin_x=grid.origin_x + c0 * grid.res,
+        origin_y=grid.origin_y + r0 * grid.res,
+        res=grid.res,
+        width=c1 - c0,
+        height=r1 - r0,
+    )
+    return c0, grid.height - r1, c1 - c0, r1 - r0, sub
+
+
+def cut_window(
+    src: Path,
+    out: Path,
+    grid: GridSpec,
+    bbox: tuple[float, float, float, float],
+    *,
+    sink: CommandSink | None,
+    step: str,
+) -> GridSpec:
+    """Copy the *bbox* window of *src* (on *grid*) to *out*, cell for cell."""
+    xoff, yoff, xsize, ysize, sub = window(grid, bbox)
+    run(
+        [
+            "gdal_translate",
+            "-q",
+            "-srcwin",
+            str(xoff),
+            str(yoff),
+            str(xsize),
+            str(ysize),
+            "-co",
+            "COMPRESS=DEFLATE",
+            "-co",
+            "TILED=YES",
+            str(src),
+            str(out),
+        ],
+        step=step,
+        sink=sink,
+    )
+    return sub
+
+
+def write_raster(
+    values: array, grid: GridSpec, out: Path, *, crs: str, sink: CommandSink | None, step: str, nodata: float = NODATA
+) -> Path:
+    """Write row-major (top-left first) float32 *values* on *grid* as a GeoTIFF, via an ENVI raw file.
+
+    For rasters the package computes itself (e.g. a least-squares base plane) without Python bindings.
+    """
+    if len(values) != grid.width * grid.height:
+        raise ValueError("values do not match the grid size")
+    with tempfile.TemporaryDirectory(prefix="argus-survey-write-") as tmp:
+        raw = Path(tmp) / "r.bin"
+        data = array("f", values)
+        if sys.byteorder != "little":  # pragma: no cover
+            data.byteswap()
+        raw.write_bytes(data.tobytes())
+        top = grid.origin_y + grid.height * grid.res
+        (Path(tmp) / "r.hdr").write_text(
+            "ENVI\n"
+            f"samples = {grid.width}\nlines = {grid.height}\nbands = 1\nheader offset = 0\n"
+            "file type = ENVI Standard\ndata type = 4\ninterleave = bsq\nbyte order = 0\n"
+            f"map info = {{Arbitrary, 1, 1, {grid.origin_x!r}, {top!r}, {grid.res!r}, {grid.res!r}}}\n"
+            f"data ignore value = {nodata!r}\n",
+            encoding="utf-8",
+        )
+        run(
+            [
+                "gdal_translate",
+                "-q",
+                "-of",
+                "GTiff",
+                "-a_srs",
+                crs,
+                "-a_nodata",
+                repr(nodata),
+                "-co",
+                "COMPRESS=DEFLATE",
+                str(raw),
+                str(out),
+            ],
+            step=step,
+            sink=sink,
+        )
+    set_crs(out, crs, sink=sink, step=step)
+    return out

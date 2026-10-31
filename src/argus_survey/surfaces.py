@@ -2,10 +2,12 @@
 
 - **DTM**: ground (class 2), IDW within ``r = res·√2`` of each cell centre
   (PDAL's radius); a cell with no ground point that close stays a void.
-- **DSM**: the highest point in each cell (``binmode`` — a point lands in exactly
-  one cell; PDAL's default radius mode would smear every maximum into the
-  neighbouring cells and inflate volumes). First returns for LiDAR, all points
-  for photogrammetry; noise (class 7) excluded.
+- **DSM**: IDW of the top surface by default — first returns for LiDAR, all
+  points for photogrammetry, noise (class 7) excluded. Unbiased on smooth
+  surfaces such as stockpiles. ``dsm_method="max"`` gives the highest point per
+  cell instead (``binmode``: a point lands in exactly one cell), which suits
+  roof edges and canopy but reads high on any slope by about slope × res/2 — a
+  +6 % volume bias on a 1:2 stockpile at 0.25 m — so it is never the default.
 - **CHM**: ``filters.hag_nn`` per buffered tile, then the highest
   HeightAboveGround per cell (binmode).
 
@@ -113,9 +115,12 @@ def surfaces(
     dsm: bool = True,
     chm: bool = True,
     fill_voids: int | None = None,
+    dsm_method: str = "idw",
     workers: int | None = None,
 ) -> SurfacesReport:
     job.require_crs(STEP, height=True)
+    if dsm_method not in {"idw", "max"}:
+        raise SurveyError("--dsm-method must be idw or max")
     if not (dtm or dsm or chm):
         raise SurveyError("nothing to do: choose at least one of --dtm/--dsm/--chm")
     ingest = job.sidecar.ingest
@@ -165,10 +170,14 @@ def surfaces(
                 stages.append({"type": "filters.range", "limits": "Classification![7:7]"})
             if lidar:
                 stages.append({"type": "filters.range", "limits": "ReturnNumber[1:1]"})
-            stages.append(_writer(path, grid, "max", binmode=True))
+            if dsm_method == "idw":
+                stages.append(_writer(path, grid, "idw", radius=radius, window_size=0))
+            else:
+                stages.append(_writer(path, grid, "max", binmode=True))
             pdal_pipeline(stages, step=STEP, sink=sink, stream=True)
             used = "first returns" if lidar else "all points (no reliable return numbering)"
-            jobs.append(("dsm", path, "max", used + (", noise excluded" if classified else ""), None))
+            used += ", noise excluded" if classified else ""
+            jobs.append(("dsm", path, dsm_method, used, radius if dsm_method == "idw" else None))
 
         if chm:
             assert classified is not None

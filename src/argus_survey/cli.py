@@ -20,7 +20,7 @@ from rich.table import Table
 
 from argus_survey import __version__, config
 from argus_survey.jobs import Job, open_job
-from argus_survey.models import CrsRecord, SurveyError
+from argus_survey.models import CrsRecord, SurveyError, VolumeReport
 from argus_survey.tools import ToolError
 
 app = typer.Typer(
@@ -334,15 +334,20 @@ def surfaces(
     fill_voids: Annotated[
         int | None, typer.Option("--fill-voids", min=1, help="Fill DTM voids up to N cells across (recorded)")
     ] = None,
+    dsm_method: Annotated[
+        str, typer.Option("--dsm-method", help="idw (unbiased, for volumes) or max (roof edges/canopy)")
+    ] = "idw",
     workers: WorkersOpt = None,
 ) -> None:
-    """DTM (ground IDW), DSM (max), CHM (height above ground) on a snapped grid, with void masks and hillshade."""
+    """DTM (ground IDW), DSM (top-surface IDW or max), CHM (height above ground) on a snapped grid."""
     from argus_survey.surfaces import surfaces as run_surfaces
 
     try:
         j = _job(job, out)
         n = len(j.sidecar.warnings)
-        r = run_surfaces(j, res=res, dtm=dtm, dsm=dsm, chm=chm, fill_voids=fill_voids, workers=workers)
+        r = run_surfaces(
+            j, res=res, dtm=dtm, dsm=dsm, chm=chm, fill_voids=fill_voids, dsm_method=dsm_method, workers=workers
+        )
     except SurveyError as exc:
         raise fail(exc) from exc
     g = r.grid
@@ -420,6 +425,225 @@ def run(
         raise fail(exc) from exc
     console.print(f"[bold green]done[/] job [bold]{j.id}[/] · {len(j.sidecar.products)} products in {j.dir}")
     _warnings(j, 0)
+
+
+def _print_volumes(r: VolumeReport) -> None:
+    labels = {"stockpile": ("above", "below"), "cutfill": ("fill", "cut"), "change": ("gain", "loss")}[r.kind]
+    table = Table(title=f"{r.kind} · {r.surface} · {r.res} m cells", title_justify="left")
+    for col in ("zone", "area m²", f"{labels[0]} m³", f"{labels[1]} m³", "net m³", "voids %"):
+        table.add_column(col, justify="right" if col != "zone" else "left")
+    for z in r.zones:
+        table.add_row(
+            z.name,
+            f"{z.area_m2:,.2f}",
+            f"{z.above_m3:,.2f}",
+            f"{z.below_m3:,.2f}",
+            f"{z.net_m3:,.2f}",
+            f"{z.void_percent:.2f}",
+        )
+    console.print(table)
+    console.print(f"[dim]{r.sign_convention}[/]")
+    for z in r.zones:
+        console.print(
+            f"[dim]{z.name}: base {z.base}"
+            + (f" (fit RMS {z.base_fit_rms_m} m)" if z.base_fit_rms_m is not None else "")
+            + "[/]"
+        )
+
+
+@app.command()
+def volume(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    polygon: Annotated[Path, typer.Option("--polygon", help="Stockpile polygon(s) (GeoJSON/GPKG/SHP)")] = ...,  # type: ignore[assignment]
+    base: Annotated[
+        str, typer.Option("--base", help="plane | lowest-perimeter | surface:<raster on the job grid>")
+    ] = "plane",
+    surface: Annotated[str, typer.Option("--surface", help="dtm or dsm (the top of the pile)")] = "dtm",
+    polygon_srs: Annotated[str | None, typer.Option("--polygon-srs", help="CRS of the polygon if it has none")] = None,
+    allow_voids: Annotated[bool, typer.Option("--allow-voids", help="Accept >5% voids (counted as zero)")] = False,
+    resample: Annotated[bool, typer.Option("--resample", help="Warp a misaligned base surface (recorded)")] = False,
+    base_vertical: Annotated[
+        str | None, typer.Option("--base-vertical", help="Vertical datum of a base surface that declares none")
+    ] = None,
+) -> None:
+    """Stockpile volumes over polygons against a plane, lowest-perimeter or surface base (volume.json)."""
+    from argus_survey.volume import volume as run_volume
+
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = run_volume(
+            j,
+            polygon,
+            base=base,
+            surface=surface,
+            polygon_srs=polygon_srs,
+            allow_voids=allow_voids,
+            resample=resample,
+            base_vertical=base_vertical,
+        )
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    _print_volumes(r)
+    _warnings(j, n)
+
+
+@app.command()
+def cutfill(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    design: Annotated[Path, typer.Option("--design", help="Design surface GeoTIFF in the job CRS")] = ...,  # type: ignore[assignment]
+    polygon: Annotated[
+        Path | None, typer.Option("--polygon", help="Limit to polygon(s); default the design extent")
+    ] = None,
+    polygon_srs: Annotated[str | None, typer.Option("--polygon-srs")] = None,
+    surface: Annotated[str, typer.Option("--surface", help="Existing surface: dtm or dsm")] = "dtm",
+    design_vertical: Annotated[
+        str | None, typer.Option("--design-vertical", help="Design heights' datum if the file declares none")
+    ] = None,
+    resample: Annotated[bool, typer.Option("--resample", help="Warp a misaligned design (bilinear, recorded)")] = False,
+    allow_voids: Annotated[bool, typer.Option("--allow-voids")] = False,
+) -> None:
+    """Cut and fill between the existing surface and a design surface (cutfill.json)."""
+    from argus_survey.volume import cutfill as run_cutfill
+
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = run_cutfill(
+            j,
+            design,
+            polygon=polygon,
+            polygon_srs=polygon_srs,
+            surface=surface,
+            design_vertical=design_vertical,
+            resample=resample,
+            allow_voids=allow_voids,
+        )
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    _print_volumes(r)
+    _warnings(j, n)
+
+
+@app.command()
+def change(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    against: Annotated[str, typer.Option("--against", help="Earlier epoch's job id (same jobs dir)")] = ...,  # type: ignore[assignment]
+    lod: Annotated[float | None, typer.Option("--lod", help="Level of detection (m); default 0.10")] = None,
+    lod_from_accuracy: Annotated[
+        bool, typer.Option("--lod-from-accuracy", help="LoD95 = 1.96·√(σ₁²+σ₂²) from both epochs' NVA RMSE")
+    ] = False,
+    surface: Annotated[str, typer.Option("--surface", help="dtm or dsm")] = "dtm",
+    polygon: Annotated[Path | None, typer.Option("--polygon", help="Only within these polygon(s)")] = None,
+    polygon_srs: Annotated[str | None, typer.Option("--polygon-srs")] = None,
+) -> None:
+    """DEM of difference (this job − --against) with a level of detection (change.json, dod.tif)."""
+    from argus_survey.change import change as run_change
+    from argus_survey.jobs import JobStore
+
+    try:
+        j = _job(job, out)
+        other = JobStore(j.dir.parent).open(against)
+        n = len(j.sidecar.warnings)
+        r = run_change(
+            j,
+            other,
+            surface=surface,
+            lod=lod,
+            lod_from_accuracy=lod_from_accuracy,
+            polygon=polygon,
+            polygon_srs=polygon_srs,
+        )
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    console.print(f"[green]change[/] {j.id} − {r.against_job} ({r.surface.upper()}, LoD {r.lod_m} m: {r.lod_rule})")
+    console.print(
+        f"  gain {r.gain_m3:,.2f} m³ over {r.gain_area_m2:,.1f} m² · loss {r.loss_m3:,.2f} m³ over "
+        f"{r.loss_area_m2:,.1f} m² · net {r.net_m3:+,.2f} m³ · voids {r.void_percent:.2f}%"
+    )
+    _warnings(j, n)
+
+
+@app.command()
+def accuracy(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    checks: Annotated[Path, typer.Option("--checks", help="Check points CSV: id,x,y,z[,description]")] = ...,  # type: ignore[assignment]
+    cols: Annotated[str, typer.Option("--cols", help="Column names for id,x,y,z")] = "id,x,y,z",
+    checks_crs: Annotated[
+        str | None, typer.Option("--crs", help="Check points' compound CRS, e.g. EPSG:7850+5711")
+    ] = None,
+    checkpoint_rmse: Annotated[
+        float | None, typer.Option("--checkpoint-rmse", help="Vertical RMSE of the check point survey (m)")
+    ] = None,
+    target_class: Annotated[
+        float | None, typer.Option("--class-cm", help="ASPRS vertical accuracy class to test against (cm RMSEV)")
+    ] = None,
+    surface: Annotated[str, typer.Option("--surface", help="Surface to test (dtm)")] = "dtm",
+) -> None:
+    """Vertical accuracy against check points (ASPRS ed. 2: NVA pass/fail, VVA reported) → accuracy.json."""
+    from argus_survey.accuracy import accuracy as run_accuracy
+
+    names = tuple(c.strip() for c in cols.split(","))
+    if len(names) != 4:
+        raise fail(SurveyError("--cols needs four names: id,x,y,z"))
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = run_accuracy(
+            j,
+            checks,
+            checks_crs=checks_crs,
+            cols=names,
+            checkpoint_rmse=checkpoint_rmse,  # type: ignore[arg-type]
+            surface=surface,
+            target_class_cm=target_class,
+        )
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    table = Table(title=f"{r.standard} · {r.surface.upper()}", title_justify="left")
+    for col in ("group", "n", "excluded", "mean m", "std m", "RMSE m", "max |e| m", "≥30"):
+        table.add_column(col, justify="right")
+    for g in r.groups:
+        fmt = lambda v: "—" if v is None else f"{v:.3f}"  # noqa: E731
+        table.add_row(
+            g.group,
+            str(g.n),
+            str(g.excluded),
+            fmt(g.mean_m),
+            fmt(g.std_m),
+            fmt(g.rmse_m),
+            fmt(g.max_abs_m),
+            "yes" if g.meets_minimum_count else "[red]no[/]",
+        )
+    console.print(table)
+    console.print(r.statement)
+    _warnings(j, n)
+
+
+@app.command()
+def profile(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    line: Annotated[Path, typer.Option("--line", help="Line file (GeoJSON/GPKG/SHP)")] = ...,  # type: ignore[assignment]
+    step: Annotated[float, typer.Option("--step", help="Sample spacing along the line (m)")] = 0.5,
+    line_srs: Annotated[str | None, typer.Option("--line-srs", help="CRS of the line if it has none")] = None,
+) -> None:
+    """Sample DTM/DSM along a polyline → profile.csv + profile.svg."""
+    from argus_survey.profile import profile as run_profile
+
+    try:
+        j = _job(job, out)
+        r = run_profile(j, line, step=step, line_srs=line_srs)
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    console.print(
+        f"[green]profile[/] {r.line}: {r.length_m:,.1f} m, {r.samples} samples of "
+        f"{', '.join(s.upper() for s in r.surfaces)} → {j.path('profile.svg')}"
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

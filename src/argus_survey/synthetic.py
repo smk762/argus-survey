@@ -227,12 +227,16 @@ class CheckPoint:
     description: str  # "open" (NVA) or "vegetated" (VVA)
 
 
-def check_points(scene: Scene, *, n_open: int = 30, n_vegetated: int = 10, seed: int = 99) -> list[CheckPoint]:
+def check_points(
+    scene: Scene, *, n_open: int = 30, n_vegetated: int = 10, seed: int = 99, z_noise: float = 0.0
+) -> list[CheckPoint]:
     """Ground check points on the true bare-earth surface, away from the stockpile, building and edges.
 
     "open" points lie in clear ground (non-vegetated accuracy); "vegetated" ones under tree crowns.
+    *z_noise*: σ of Gaussian error added to the check heights (a survey's own error, for testing RMSE).
     """
     rnd = random.Random(seed)
+    zn = random.Random(seed + 1)
     e0, n0 = scene.origin
     out: list[CheckPoint] = []
     tries = 0
@@ -243,7 +247,11 @@ def check_points(scene: Scene, *, n_open: int = 30, n_vegetated: int = 10, seed:
             continue
         out.append(
             CheckPoint(
-                f"CP{len(out) + 1:03d}", round(e0 + x, 3), round(n0 + y, 3), round(scene.ground_z(x, y), 3), "open"
+                f"CP{len(out) + 1:03d}",
+                round(e0 + x, 3),
+                round(n0 + y, 3),
+                round(scene.ground_z(x, y) + zn.gauss(0, z_noise), 3),
+                "open",
             )
         )
     for k in range(n_vegetated):
@@ -256,7 +264,7 @@ def check_points(scene: Scene, *, n_open: int = 30, n_vegetated: int = 10, seed:
                 f"CP{len(out) + 1:03d}",
                 round(e0 + x, 3),
                 round(n0 + y, 3),
-                round(scene.surface_z(x, y), 3),
+                round(scene.surface_z(x, y) + zn.gauss(0, z_noise), 3),
                 "vegetated",
             )
         )

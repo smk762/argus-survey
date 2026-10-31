@@ -20,8 +20,6 @@ Ingest is the step where datums are decided, so it is the most defensive:
 
 from __future__ import annotations
 
-import csv
-import io
 import math
 import re
 import shutil
@@ -197,36 +195,11 @@ def geoid_grids(op: TransformOp) -> list[str]:
 
 def crop_polygons(path: Path, target: CrsRecord, *, crop_srs: str | None, sink: CommandSink | None) -> list[str]:
     """Polygons of *path* as WKT in the target CRS. Refuses a polygon whose CRS is unknown or implausible."""
-    info = run_json(["ogrinfo", "-json", "-so", "-al", str(path)], step=STEP, sink=sink)
-    layers = info.get("layers") or []
-    if not layers:
-        raise SurveyError(f"{path.name} has no vector layer")
-    layer = layers[0]
-    fields = layer.get("geometryFields") or [{}]
-    declared = (fields[0].get("coordinateSystem") or {}).get("projjson")
-    extent = fields[0].get("extent") or layer.get("extent")
-    if crop_srs is None:
-        if not declared:
-            raise SurveyError(f"{path.name} has no CRS; pass --crop-srs with the CRS of its coordinates")
-        geographic = declared.get("type") == "GeographicCRS"
-        if (
-            geographic
-            and extent
-            and (max(abs(extent[0]), abs(extent[2])) > 180 or max(abs(extent[1]), abs(extent[3])) > 90)
-        ):
-            raise SurveyError(
-                f"{path.name} declares geographic coordinates (GeoJSON without a 'crs' member defaults to WGS 84) "
-                "but its extent is clearly projected; pass --crop-srs (e.g. EPSG:7850)"
-            )
-    argv = ["ogr2ogr", "-f", "CSV", "/vsistdout/", str(path), "-t_srs", target.definition, "-lco", "GEOMETRY=AS_WKT"]
-    if crop_srs is not None:
-        argv[5:5] = ["-s_srs", crop_srs]
-    out = run(argv, step=STEP, sink=sink).stdout
-    wkts = [row["WKT"] for row in csv.DictReader(io.StringIO(out)) if row.get("WKT", "").strip()]
-    wkts = [w for w in wkts if w.upper().startswith(("POLYGON", "MULTIPOLYGON"))]
-    if not wkts:
-        raise SurveyError(f"{path.name} contains no polygon")
-    return wkts
+    from argus_survey.vectors import read_polygons
+
+    return [
+        w for _, w in read_polygons(path, target.definition, src_srs=crop_srs, sink=sink, step=STEP, flag="--crop-srs")
+    ]
 
 
 # ── stats ─────────────────────────────────────────────────────────────────────

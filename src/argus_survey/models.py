@@ -229,6 +229,10 @@ class JobSidecar(_Model):
     ground: GroundReport | None = None
     surfaces: SurfacesReport | None = None
     contours: ContoursReport | None = None
+    volumes: list[VolumeReport] = Field(default_factory=list)
+    change: ChangeReport | None = None
+    accuracy: AccuracyReport | None = None
+    profiles: list[ProfileReport] = Field(default_factory=list)
     commands: list[CommandRecord] = Field(default_factory=list)
     products: dict[str, Product] = Field(default_factory=dict)
     timings: dict[str, float] = Field(default_factory=dict)
@@ -395,6 +399,104 @@ class ContoursReport(_Model):
     features: int
     min_elev: float | None
     max_elev: float | None
+
+
+# ── Volumes, change, accuracy, profiles ────────────────────────────────────────
+
+
+class ZoneVolume(_Model):
+    """Volumes between an upper and a lower surface over one polygon (all positive numbers)."""
+
+    name: str
+    area_m2: float  # polygon area as covered by the grid (fractional cells)
+    above_m3: float  # upper above lower: stockpile volume / fill needed / gain
+    below_m3: float  # upper below lower: hollow under base / cut needed / loss
+    net_m3: float  # above - below
+    area_above_m2: float
+    area_below_m2: float
+    void_percent: float  # of the polygon's area with no value in either surface
+    base: str  # description of the lower surface
+    base_fit_rms_m: float | None = None  # plane bases: RMS of boundary heights about the fitted plane
+    boundary_samples: int | None = None
+
+
+class VolumeReport(_Model):
+    kind: Literal["stockpile", "cutfill", "change"]
+    surface: str  # what "upper"/"lower" are, in words
+    sign_convention: str
+    res: float
+    surface_void_percent: dict[str, float]  # per input surface, of the whole surface's coverage
+    method: str
+    zones: list[ZoneVolume]
+    resampled: str | None = None  # if an input was resampled onto the grid, how
+    allow_voids: bool = False
+
+
+class ChangeReport(_Model):
+    against_job: str
+    against_sidecar_sha256: str
+    this_sidecar_sha256: str
+    surface: str
+    lod_m: float
+    lod_rule: str
+    gain_m3: float
+    loss_m3: float
+    net_m3: float
+    gain_area_m2: float
+    loss_area_m2: float
+    no_change_area_m2: float
+    compared_area_m2: float
+    void_percent: float
+    res: float
+    area: str = "whole overlap of the two epochs"
+
+
+class CheckResidual(_Model):
+    id: str
+    x: float
+    y: float
+    z_check: float
+    z_surface: float | None
+    residual: float | None  # surface - check (ASPRS: data minus checkpoint)
+    group: Literal["NVA", "VVA"]
+    description: str = ""
+    excluded: str | None = None  # why it was not used
+
+
+class AccuracyGroup(_Model):
+    group: Literal["NVA", "VVA"]
+    n: int
+    excluded: int
+    mean_m: float | None
+    std_m: float | None  # sample standard deviation (n-1)
+    rmse_data_m: float | None  # RMSE of the residuals alone
+    rmse_m: float | None  # product RMSE incl. check point survey accuracy, ASPRS ed. 2
+    max_abs_m: float | None
+    meets_minimum_count: bool
+    pass_fail_applies: bool  # NVA: yes; VVA: reported as found (ed. 2)
+
+
+class AccuracyReport(_Model):
+    standard: str
+    surface: str
+    sampling: str
+    checks_file: FileRef
+    checks_crs: str
+    transform: TransformOp | None
+    checkpoint_rmse_m: float | None
+    groups: list[AccuracyGroup]
+    residuals: list[CheckResidual]
+    target_class_cm: float | None = None
+    statement: str
+    notes: list[str] = Field(default_factory=list)
+
+
+class ProfileReport(_Model):
+    line: str
+    length_m: float
+    step_m: float
+    samples: int
+    surfaces: list[str]
 
 
 JobSidecar.model_rebuild()

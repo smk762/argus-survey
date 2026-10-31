@@ -33,6 +33,11 @@ It is judged on **correct datums, honest accuracy numbers and reproducible outpu
 - `ground.py` — per tile: reset classes → outliers (class 7) → SMRF/CSF ignoring 7; photogrammetry returns normalised 1-of-1 (recorded); ground density/spacing.
 - `surfaces.py` — DTM (IDW r=res·√2 of class 2), DSM (binned max; first returns for LiDAR), CHM (tiled hag_nn → binned max), void masks (1/0/255) and void % of coverage, optional fill re-masked to coverage, hillshade.
 - `contours.py` — gdal_contour → GPKG with `idx` (index contours) → GeoJSON.
+- `vectors.py` — polygons/lines into the job CRS (refuses a CRS-less file, or GeoJSON whose "WGS 84" extent is plainly projected), WKT rings/bbox, `densify`, `write_zones` (GPKG for zonal-stats).
+- `volume.py` — `difference_volumes` (the engine: one 6-band `gdal raster calc` + `gdal raster zonal-stats --pixels fractional`), `volume` (stockpile: plane / lowest-perimeter / surface base), `cutfill` (design vs surface; fill = design above), `check_raster_crs`, `align_raster` (exact copy if aligned, else refuse unless `--resample`).
+- `change.py` — DoD later − earlier on the overlap (aligned grids, same CRS), LoD given or 1.96·√(σ₁²+σ₂²), optional polygon; both sidecars pinned by SHA256.
+- `accuracy.py` — ASPRS ed. 2: RMSE only (no 95 %), ≥30 checks, product RMSE = √(data² + checkpoints²), NVA pass/fail vs `--class-cm`, VVA reported as found; check points transformed with `cct` through the selected operation.
+- `profile.py` — densified line → bilinear samples → CSV + pure-Python SVG (voids break the line).
 - `pipeline.py` — `run_all` (`argus-survey run`).
 - `cli.py` — Typer CLI.
 
@@ -69,6 +74,9 @@ The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docke
 - Drone scale: every ingest stage is streamable (`pdal pipeline --stream`); `writers.copc` is **not** used because it buffers the whole cloud — untwine builds the COPC out of core.
 - **writers.gdal's default radius mode smears** each point into neighbouring cells (radius res·√2): fine for IDW, wrong for max/count. DSM, density and CHM use `binmode: true`.
 - `gdal_rasterize -a_srs` drops the vertical part of a compound CRS, and `gdal raster calc` then refuses to mix it with a PDAL raster ("Input spatial reference systems are inconsistent"). Rasters carry the job's full compound CRS; stamp it with `rasters.set_crs` after rasterizing.
+- **`isnodata()` in `gdal raster calc` is always false when the output has no nodata (`--nodata none`)** — voids then count as zero volume, silently. The volume engine writes `--nodata nan` (no band can produce NaN). With an output nodata, nodata *inputs* arrive as NaN in arithmetic, so guard with `isnodata(...) ? … : …` first. And an expression naming no input (`"1"`) is rejected: write `isnodata(U) ? 1 : 1`.
+- Volumes use `--pixels fractional`: the default cell-centre rule got a 5.5 × 4.25 m test polygon's area 28 % wrong at 1 m cells.
+- The DSM defaults to IDW. A binned max reads high on slopes by ~slope × res/2 (≈ +6 % on a 1:2 stockpile at 0.25 m); `--dsm-method max` exists for roofs/canopy.
 - `gdal raster pixel-info` can't always write GeoJSON to `/vsistdout/`; write a temp file.
 - PDAL's automatic hexbin edge can be several times too coarse (coverage area doubled on the test scene); `qa.hexbin_edge` sizes it from density.
 - **Photogrammetry clouds** usually have `ReturnNumber = 0` and no classes: "first returns" selects nothing. Detect and record the source type; use all points for the DSM.
