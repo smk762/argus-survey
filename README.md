@@ -172,6 +172,6 @@ make test-docker  # the full suite in the image, tools required (what CI runs)
 See [CLAUDE.md](CLAUDE.md) for the code map and conventions, [docs/runbook.md](docs/runbook.md) for
 operations, [docs/data-sources.md](docs/data-sources.md) for public data and
 [docs/atlas-showcase.md](docs/atlas-showcase.md) for turning a survey DTM into an argus-atlas map.
-Follow-ups are in [TODO.md](TODO.md) — CAD export (LandXML/DXF) first.
+Follow-ups are [GitHub issues](https://github.com/smk762/argus-survey/issues) — Autodesk interoperability (LandXML, DXF, ReCap) first.
 
 Part of the [Argus suite](https://github.com/smk762?tab=repositories&q=argus). MIT licence.
