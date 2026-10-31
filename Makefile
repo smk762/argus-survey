@@ -1,6 +1,6 @@
 UV ?= uv
 
-.PHONY: help install lock geo-lock lint format test test-docker image doctor build clean
+.PHONY: help install lock geo-lock lint format test test-docker image doctor sample demo up down build clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -34,6 +34,18 @@ image:  ## Build the runtime image (runs `doctor --strict` as its last step)
 
 doctor:  ## Toolchain report from the image
 	docker compose run --rm survey doctor
+
+sample:  ## Fetch a small public USGS 3DEP LiDAR sample into data/in/usgs-sample.laz
+	./scripts/fetch-usgs-sample.sh
+
+demo:  ## Synthetic demo job (known answers) in data/jobs/demo — no download
+	docker compose run --rm --entrypoint sh survey -c 'cd /tmp && argus-survey synth site.laz --checks checks.csv && argus-survey run site.laz --job demo --res 0.5 --interval 0.5 && argus-survey accuracy --job demo --checks checks.csv --crs EPSG:7850+5711'
+
+up:  ## Start the API + viewer on http://127.0.0.1:8107/viewer
+	docker compose up -d --build serve
+
+down:  ## Stop the API
+	docker compose down
 
 build:  ## Build sdist + wheel
 	$(UV) build

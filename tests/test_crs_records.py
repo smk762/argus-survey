@@ -113,3 +113,16 @@ def test_same_crs() -> None:
     b = crs.record_from_projjson(load("mga50_ahd"), definition="something else")
     assert crs.same_crs(a, b)
     assert not crs.same_crs(a, crs.record_from_projjson(load("pcg2020")))
+
+
+def test_survey_projection_refuses_geographic_and_mercator() -> None:
+    crs.require_survey_projection(crs.record_from_projjson(load("mga50_ahd")), "x")
+    with pytest.raises(SurveyError, match="geographic"):
+        crs.require_survey_projection(crs.record_from_projjson(load("gda2020_3d")), "x")
+    merc = CrsRecord(
+        definition="EPSG:3857",
+        name="WGS 84 / Pseudo-Mercator",
+        horizontal=CrsRef(name="WGS 84 / Pseudo-Mercator", epsg=3857, kind="ProjectedCRS"),
+    )
+    with pytest.raises(SurveyError, match="Mercator"):
+        crs.require_survey_projection(merc, "x")

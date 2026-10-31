@@ -82,6 +82,8 @@ The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docke
 - The DSM defaults to IDW. A binned max reads high on slopes by ~slope × res/2 (≈ +6 % on a 1:2 stockpile at 0.25 m); `--dsm-method max` exists for roofs/canopy.
 - `gdal raster pixel-info` can't always write GeoJSON to `/vsistdout/`; write a temp file.
 - PDAL's automatic hexbin edge can be several times too coarse (coverage area doubled on the test scene); `qa.hexbin_edge` sizes it from density.
+- **Viewer libraries**: MapLibre **5.24.0** UMD, not 6.x — 6 is ESM-only and its separate module worker can't start from a cross-origin CDN (GeoJSON sources silently never render; a blob-import wrapper didn't help). copc 0.0.9 + laz-perf 0.0.7 (web build via jsDelivr `+esm`, `locateFile` for the wasm) + three 0.186.1. Check the viewer in headless Chrome after any bump (`zenika/alpine-chrome` with `--use-angle=swiftshader`, `?points=1` auto-loads the cloud).
+- The `serve` container runs the package installed in the image: `docker compose up -d --build serve` after changing the viewer or server.
 - **Photogrammetry clouds** usually have `ReturnNumber = 0` and no classes: "first returns" selects nothing. Detect and record the source type; use all points for the DSM.
 - The conda lock includes an x86-64-v3 (AVX2) microarch marker; very old CPUs can't run the image.
 - **Branches:** `dev` is the default branch and takes feature PRs; `main` is protected and only receives `dev` → `main` release PRs. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading.

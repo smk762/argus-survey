@@ -1,1 +1,408 @@
-<!doctype html><html><head><title>placeholder</title></head><body></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argus Survey Viewer</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2329; --muted: #5f6b76; --line: #d8dee4;
+  --accent: #1f5fa8; --warn: #8a5a00; --warnbg: #fff4d6; --bad: #9b1c1c; --badbg: #fde8e8; --mapbg: #e9ecef;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111418; --panel: #1a1f25; --ink: #e6e9ec; --muted: #9aa5b1; --line: #2c333b;
+    --accent: #6ea8ff; --warn: #f0c36a; --warnbg: #3a2e12; --bad: #ff8a8a; --badbg: #3a1717; --mapbg: #0d1013;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111418; --panel: #1a1f25; --ink: #e6e9ec; --muted: #9aa5b1; --line: #2c333b;
+  --accent: #6ea8ff; --warn: #f0c36a; --warnbg: #3a2e12; --bad: #ff8a8a; --badbg: #3a1717; --mapbg: #0d1013;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+header .crs { color: var(--muted); font-size: 13px; }
+select, button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 4px 10px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; padding: 12px 16px;
+  height: calc(100% - 52px); }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  display: flex; flex-direction: column; min-height: 0; }
+.pane h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0;
+  padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+.pane h2 .sp { flex: 1; }
+#map { flex: 1; min-height: 320px; background: var(--mapbg); }
+#points { flex: 1; min-height: 260px; position: relative; background: var(--mapbg); }
+#points canvas { display: block; width: 100%; height: 100%; }
+.overlay-msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 16px;
+  text-align: center; pointer-events: none; }
+.layers { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 12px; border-bottom: 1px solid var(--line);
+  font-size: 13px; }
+.layers label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+#info { padding: 10px 12px; overflow: auto; font-size: 13px; max-height: 40vh; }
+#info table { border-collapse: collapse; width: 100%; }
+#info th, #info td { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+#info th { color: var(--muted); font-weight: 500; width: 36%; }
+.banner { padding: 6px 10px; border-radius: 6px; margin: 6px 0; font-size: 13px; }
+.banner.bad { background: var(--badbg); color: var(--bad); }
+.banner.warn { background: var(--warnbg); color: var(--warn); }
+#log { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--muted); max-height: 120px;
+  overflow: auto; padding: 6px 12px; border-top: 1px solid var(--line); white-space: pre-wrap; }
+#profile img { width: 100%; display: block; background: #fff; }
+a { color: var(--accent); }
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; height: auto; }
+  #map { min-height: 60vh; }
+  #points { min-height: 50vh; }
+}
+</style>
+<!-- MapLibre 5's UMD build embeds its worker and starts it from a blob, so it works from a CDN; 6.x is ESM-only
+     and its separate worker module can't be started cross-origin. -->
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+  "copc": "https://cdn.jsdelivr.net/npm/copc@0.0.9/+esm",
+  "laz-perf": "https://cdn.jsdelivr.net/npm/laz-perf@0.0.7/lib/web/index.js/+esm"
+} }
+</script>
+</head>
+<body>
+<header>
+  <h1>Argus Survey</h1>
+  <select id="job" aria-label="Job"></select>
+  <span class="crs" id="crs"></span>
+  <span class="pill" id="posture"></span>
+  <span style="flex:1"></span>
+  <a id="report" target="_blank" rel="noopener">report</a>
+</header>
+<main>
+  <section class="pane">
+    <h2>Map <span class="sp"></span>
+      <button id="draw" title="Click points on the map, double-click to finish">Draw profile</button></h2>
+    <div class="layers" id="layers"></div>
+    <div id="map"></div>
+    <div id="log" aria-live="polite"></div>
+  </section>
+  <div class="side">
+    <section class="pane" style="flex:1.2">
+      <h2>Points <span class="sp"></span>
+        <select id="colour" aria-label="Colour points by">
+          <option value="z">elevation</option><option value="class">class</option>
+          <option value="intensity">intensity</option>
+        </select>
+        <button id="loadpts">Load</button></h2>
+      <div id="points"><div class="overlay-msg" id="ptsmsg">Streams the job's COPC over HTTP range requests.</div></div>
+    </section>
+    <section class="pane">
+      <h2>Job</h2>
+      <div id="info"></div>
+      <div id="profile"></div>
+    </section>
+  </div>
+</main>
+<script type="module">
+// The viewer only views: everything it shows comes from the argus-survey API (same origin, or ?api=…).
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { Copc } from "copc";
+import { createLazPerf } from "laz-perf";
+
+const params = new URLSearchParams(location.search);
+const API = (params.get("api") || location.origin).replace(/\/$/, "");
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+window.addEventListener("error", (e) => log(`error: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message || e.reason}`));
+const log = (msg) => { const el = $("log"); el.textContent += msg + "\n"; el.scrollTop = el.scrollHeight; };
+const api = async (path) => { const r = await fetch(API + path); if (!r.ok) throw new Error(`${path}: ${r.status}`); return r; };
+
+const RASTERS = [["hillshade", "Hillshade"], ["dtm", "DTM"], ["dsm", "DSM"], ["chm", "CHM"], ["density", "Density"],
+                 ["dod_lod", "Change"]];
+const VECTORS = [["contours_geojson", "Contours"], ["boundary", "Coverage"], ["gaps", "Gaps"]];
+let health = { read_only: true };
+let job = null;
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background",
+    paint: { "background-color": getComputedStyle(document.documentElement).getPropertyValue("--mapbg").trim() || "#e9ecef" } }] },
+  center: [115.86, -31.95], zoom: 9, attributionControl: false,
+});
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
+map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+const mapReady = new Promise((ok) => map.on("load", ok));
+map.on("error", (e) => log(`map: ${e.error?.message || e.error || "error"}`));
+
+function clearJobLayers() {
+  for (const l of [...map.getStyle().layers]) if (l.id !== "bg") map.removeLayer(l.id);
+  for (const s of Object.keys(map.getStyle().sources)) map.removeSource(s);
+}
+
+async function addRaster(kind, visible) {
+  const meta = await (await api(`/jobs/${job.job_id}/web/${kind}`)).json();
+  map.addSource(kind, { type: "image", url: API + meta.url, coordinates: meta.coordinates });
+  map.addLayer({ id: kind, type: "raster", source: kind,
+    paint: { "raster-opacity": kind === "hillshade" ? 1 : 0.75, "raster-fade-duration": 0 },
+    layout: { visibility: visible ? "visible" : "none" } });
+  return meta.coordinates;
+}
+
+async function addVector(kind, visible) {
+  const data = await (await api(`/jobs/${job.job_id}/web/${kind}`)).json();
+  map.addSource(kind, { type: "geojson", data });
+  const vis = { visibility: visible ? "visible" : "none" };
+  if (kind === "contours_geojson") {
+    map.addLayer({ id: kind, type: "line", source: kind, layout: vis,
+      paint: { "line-color": "#6b3f12", "line-width": ["case", ["==", ["get", "idx"], 1], 1.6, 0.6] } });
+  } else if (kind === "boundary") {
+    map.addLayer({ id: kind, type: "line", source: kind, layout: vis, paint: { "line-color": "#1f5fa8", "line-width": 1.5 } });
+  } else {
+    map.addLayer({ id: kind, type: "fill", source: kind, layout: vis, paint: { "fill-color": "#d62728", "fill-opacity": 0.45 } });
+  }
+}
+
+function layerToggles(available) {
+  const box = $("layers"); box.innerHTML = "";
+  for (const [kind, label] of [...RASTERS, ...VECTORS]) {
+    if (!available.includes(kind)) continue;
+    const vis = map.getLayoutProperty(kind, "visibility") !== "none";
+    const el = document.createElement("label");
+    el.innerHTML = `<input type="checkbox" ${vis ? "checked" : ""}> ${esc(label)}`;
+    el.querySelector("input").addEventListener("change", (e) =>
+      map.setLayoutProperty(kind, "visibility", e.target.checked ? "visible" : "none"));
+    box.appendChild(el);
+  }
+}
+
+function infoPanel(s) {
+  const c = s.crs, rows = [];
+  const row = (k, v) => rows.push(`<tr><th>${esc(k)}</th><td>${v}</td></tr>`);
+  if (c) {
+    row("CRS", esc(c.name));
+    row("Vertical", c.vertical ? esc(`${c.vertical.name} [${c.height_reference}]`) : "<strong>none</strong>");
+    if (c.geoid) row("Geoid", esc(c.geoid));
+  }
+  if (s.ingest) row("Points", esc(s.ingest.output_count.toLocaleString()) + ` · ${esc(s.ingest.source_type)}`);
+  if (s.qa) row("Density p50", esc(`${s.qa.density.p50.toFixed(1)} pts/m²`));
+  if (s.ground) row("Ground", esc(`${s.ground.ground_percent.toFixed(1)}% · spacing ${s.ground.ground_spacing} m`));
+  if (s.surfaces) for (const [k, v] of Object.entries(s.surfaces.surfaces))
+    row(k.toUpperCase(), esc(`${s.surfaces.grid.res} m · voids ${v.void_percent.toFixed(2)}%`));
+  for (const v of s.volumes || []) for (const z of v.zones)
+    row(`${v.kind}: ${z.name}`, esc(`+${z.above_m3.toFixed(2)} / −${z.below_m3.toFixed(2)} m³ (${z.base})`));
+  if (s.change) row("Change", esc(`gain ${s.change.gain_m3} · loss ${s.change.loss_m3} m³ (LoD ${s.change.lod_m} m)`));
+  if (s.accuracy) row("Accuracy", esc(s.accuracy.statement));
+  const banners = [];
+  if (c && c.vertical_assumed) banners.push(`<div class="banner bad">Vertical datum ASSUMED: ${esc(c.vertical_assumed)}</div>`);
+  for (const w of s.warnings || []) banners.push(`<div class="banner warn">${esc(w)}</div>`);
+  $("info").innerHTML = banners.join("") + `<table>${rows.join("")}</table>`;
+  $("crs").textContent = c ? c.name : "";
+  const rep = $("report");
+  rep.href = s.products.report ? `${API}/jobs/${s.job_id}/report` : "#";
+  rep.style.visibility = s.products.report ? "visible" : "hidden";
+}
+
+async function openJob(id) {
+  await mapReady;
+  job = await (await api(`/jobs/${id}`)).json();
+  history.replaceState(null, "", `?${new URLSearchParams({ ...Object.fromEntries(params), job: id })}`);
+  clearJobLayers(); disposePoints(); $("profile").innerHTML = "";
+  infoPanel(job);
+  const available = [];
+  let corners = null;
+  for (const [kind] of RASTERS) if (job.products[kind]) {
+    try { const c = await addRaster(kind, kind === "hillshade"); corners = corners || c; available.push(kind); }
+    catch (e) { log(`${kind}: ${e.message}`); }
+  }
+  for (const [kind] of VECTORS) if (job.products[kind]) {
+    try { await addVector(kind, kind !== "gaps"); available.push(kind); } catch (e) { log(`${kind}: ${e.message}`); }
+  }
+  layerToggles(available);
+  if (corners) {
+    const xs = corners.map((p) => p[0]), ys = corners.map((p) => p[1]);
+    map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], { padding: 24, duration: 0 });
+  }
+  $("loadpts").disabled = !job.products.copc && !job.products.classified;
+  $("draw").disabled = health.read_only || !job.products.dtm;
+  $("draw").title = health.read_only ? "The server is read-only (SURVEY_ALLOW_PROCESS is off)" : "Click points, double-click to finish";
+}
+
+// ── profile drawing → POST /jobs/{id}/profile (Server-Sent Events) ──
+let drawing = null;
+$("draw").addEventListener("click", () => {
+  drawing = [];
+  map.getCanvas().style.cursor = "crosshair";
+  map.doubleClickZoom.disable();
+  log("profile: click points on the map, double-click to finish");
+});
+map.on("click", (e) => {
+  if (!drawing) return;
+  drawing.push([e.lngLat.lng, e.lngLat.lat]);
+  const data = { type: "Feature", geometry: { type: "LineString", coordinates: drawing } };
+  if (map.getSource("drawn")) map.getSource("drawn").setData(data);
+  else {
+    map.addSource("drawn", { type: "geojson", data });
+    map.addLayer({ id: "drawn", type: "line", source: "drawn", paint: { "line-color": "#e4572e", "line-width": 2.5 } });
+  }
+});
+map.on("dblclick", async () => {
+  if (!drawing) return;
+  const line = drawing; drawing = null;
+  map.getCanvas().style.cursor = ""; map.doubleClickZoom.enable();
+  if (line.length < 2) return log("profile: need at least two points");
+  const r = await fetch(`${API}/jobs/${job.job_id}/profile`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ line: { type: "LineString", coordinates: line }, step: 0.5 }) });
+  if (!r.ok) return log(`profile: ${r.status} ${(await r.json()).detail}`);
+  for await (const [event, data] of sse(r)) {
+    if (event === "command") log(`  #${data.index} ${data.step} · ${data.tool} ${data.seconds}s`);
+    if (event === "error") log(`profile failed: ${data.message}`);
+    if (event === "done") {
+      $("profile").innerHTML = `<img alt="Profile along the drawn line" src="${API}/jobs/${job.job_id}/profile_svg?t=${Date.now()}">`
+        + `<p style="padding:0 12px"><a href="${API}/jobs/${job.job_id}/profile">profile.csv</a></p>`;
+    }
+  }
+});
+
+async function* sse(response) {
+  const reader = response.body.getReader(), dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, i); buf = buf.slice(i + 2);
+      const ev = /^event: (.*)$/m.exec(block), da = /^data: (.*)$/m.exec(block);
+      if (ev && da) yield [ev[1], JSON.parse(da[1])];
+    }
+  }
+}
+
+// ── points: COPC streamed by range requests, decoded by laz-perf (WASM) ──
+const POINT_BUDGET = 1_500_000;
+const CLASS_RGB = { 1: [0.62, 0.62, 0.62], 2: [0.66, 0.47, 0.25], 3: [0.55, 0.78, 0.42], 4: [0.3, 0.65, 0.3],
+                    5: [0.13, 0.45, 0.2], 6: [0.85, 0.3, 0.25], 7: [1, 0, 1], 9: [0.2, 0.45, 0.85] };
+let three = null;
+let lazPerf = null;
+
+function disposePoints() {
+  if (!three) return;
+  three.renderer.setAnimationLoop(null);
+  three.renderer.dispose(); three.renderer.domElement.remove();
+  three = null;
+  $("ptsmsg").style.display = "";
+  $("ptsmsg").textContent = "Streams the job's COPC over HTTP range requests.";
+}
+
+function ramp(t) {  // viridis-ish
+  const stops = [[0.27, 0.0, 0.33], [0.23, 0.32, 0.55], [0.13, 0.57, 0.55], [0.37, 0.79, 0.38], [0.99, 0.91, 0.14]];
+  const x = Math.min(Math.max(t, 0), 1) * (stops.length - 1), i = Math.min(Math.floor(x), stops.length - 2), f = x - i;
+  return stops[i].map((v, k) => v + (stops[i + 1][k] - v) * f);
+}
+
+$("loadpts").addEventListener("click", async () => {
+  disposePoints();
+  const kind = job.products.classified ? "classified" : "copc";
+  const url = `${API}/jobs/${job.job_id}/${kind}`;
+  const msg = $("ptsmsg");
+  try {
+    msg.textContent = "Reading COPC header…";
+    lazPerf = lazPerf || await createLazPerf({ locateFile: () => "https://cdn.jsdelivr.net/npm/laz-perf@0.0.7/lib/web/laz-perf.wasm" });
+    const copc = await Copc.create(url);
+    const { nodes } = await Copc.loadHierarchyPage(url, copc.info.rootHierarchyPage);
+    const keys = Object.keys(nodes).filter((k) => nodes[k] && nodes[k].pointCount > 0)
+      .sort((a, b) => Number(a.split("-")[0]) - Number(b.split("-")[0]));
+    const chosen = []; let total = 0;
+    for (const k of keys) { if (total + nodes[k].pointCount > POINT_BUDGET) break; chosen.push(k); total += nodes[k].pointCount; }
+    const [minx, miny, minz] = copc.header.min, [maxx, maxy, maxz] = copc.header.max;
+    const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2, cz = minz;  // local origin: keeps float32 precise
+    const pos = new Float32Array(total * 3), raw = { z: new Float32Array(total), class: new Uint8Array(total), intensity: new Float32Array(total) };
+    let n = 0;
+    for (const [i, k] of chosen.entries()) {
+      msg.textContent = `Loading node ${i + 1}/${chosen.length} · ${n.toLocaleString()} points`;
+      const view = await Copc.loadPointDataView(url, copc, nodes[k], { lazPerf, include: ["X", "Y", "Z", "Classification", "Intensity"] });
+      const gx = view.getter("X"), gy = view.getter("Y"), gz = view.getter("Z"), gc = view.getter("Classification"), gi = view.getter("Intensity");
+      for (let p = 0; p < view.pointCount; p++, n++) {
+        pos[3 * n] = gx(p) - cx; pos[3 * n + 1] = gz(p) - cz; pos[3 * n + 2] = -(gy(p) - cy);
+        raw.z[n] = gz(p); raw.class[n] = gc(p); raw.intensity[n] = gi(p);
+      }
+    }
+    msg.style.display = "none";
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(pos.subarray(0, 3 * n), 3));
+    const colours = new Float32Array(3 * n);
+    geom.setAttribute("color", new THREE.BufferAttribute(colours, 3));
+    const el = $("points");
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(el.clientWidth, el.clientHeight);
+    renderer.setClearColor(getComputedStyle(document.documentElement).getPropertyValue("--mapbg").trim() || "#e9ecef");
+    el.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const span = Math.max(maxx - minx, maxy - miny);
+    const camera = new THREE.PerspectiveCamera(50, el.clientWidth / el.clientHeight, span / 1000, span * 10);
+    camera.position.set(span * 0.6, span * 0.5, span * 0.6);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, (maxz - minz) / 3, 0);
+    const material = new THREE.PointsMaterial({ size: 2, sizeAttenuation: false, vertexColors: true });
+    scene.add(new THREE.Points(geom, material));
+    three = { renderer, scene, camera, controls, geom, raw, n, zr: [minz, maxz] };
+    paint();
+    renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+    new ResizeObserver(() => { if (!three) return; renderer.setSize(el.clientWidth, el.clientHeight);
+      camera.aspect = el.clientWidth / el.clientHeight; camera.updateProjectionMatrix(); }).observe(el);
+    log(`points: ${n.toLocaleString()} of ${copc.header.pointCount.toLocaleString()} (${chosen.length} COPC nodes, coarse levels first)`);
+  } catch (e) {
+    msg.style.display = ""; msg.textContent = `Could not stream points: ${e.message}`; log(`points: ${e.stack || e}`);
+  }
+});
+
+function paint() {
+  if (!three) return;
+  const mode = $("colour").value, col = three.geom.getAttribute("color"), { raw, n } = three;
+  let lo = Infinity, hi = -Infinity;
+  if (mode !== "class") {
+    const arr = mode === "z" ? raw.z : raw.intensity;
+    const sample = Array.from(arr.subarray(0, Math.min(n, 200000))).sort((a, b) => a - b);  // 2–98 % stretch
+    lo = sample[Math.floor(sample.length * 0.02)]; hi = sample[Math.floor(sample.length * 0.98)] || lo + 1;
+  }
+  for (let i = 0; i < n; i++) {
+    const rgb = mode === "class" ? (CLASS_RGB[raw.class[i]] || [0.8, 0.8, 0.8])
+      : ramp(((mode === "z" ? raw.z[i] : raw.intensity[i]) - lo) / (hi - lo));
+    col.array[3 * i] = rgb[0]; col.array[3 * i + 1] = rgb[1]; col.array[3 * i + 2] = rgb[2];
+  }
+  col.needsUpdate = true;
+}
+$("colour").addEventListener("change", paint);
+
+// ── start ──
+(async () => {
+  try {
+    health = await (await api("/health")).json();
+    $("posture").textContent = health.read_only ? "read-only" : "processing enabled";
+    const { jobs } = await (await api("/jobs")).json();
+    const sel = $("job");
+    sel.innerHTML = jobs.map((j) => `<option value="${esc(j.job_id)}">${esc(j.job_id)}</option>`).join("");
+    if (!jobs.length) { $("info").textContent = "No jobs yet — run `argus-survey run …` first."; return; }
+    const want = params.get("job");
+    sel.value = jobs.some((j) => j.job_id === want) ? want : jobs[0].job_id;
+    sel.addEventListener("change", () => openJob(sel.value));
+    await openJob(sel.value);
+    if (params.get("points") === "1") $("loadpts").click();  // ?points=1: stream the cloud on open
+  } catch (e) { log(`viewer: ${e.message}`); $("info").textContent = `Cannot reach the API at ${API}: ${e.message}`; }
+})();
+</script>
+</body>
+</html>

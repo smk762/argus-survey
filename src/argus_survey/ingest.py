@@ -319,6 +319,7 @@ def ingest(
         )
         target = resolve_target_crs(source, t_srs, sink=sink)
         crs_mod.require_metric(target, "the target CRS" if t_srs else "the input CRS")
+        crs_mod.require_survey_projection(target, "the target CRS" if t_srs else "the input CRS")
 
         op: TransformOp | None = None
         coord_op: str | None = None

@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Viewer (`/viewer`): MapLibre map of surfaces, density, change, contours and coverage; the classified cloud streamed from the COPC (copc.js + laz-perf + three.js) coloured by elevation/class/intensity; job CRS and warnings; profile drawing when processing is allowed.
+- Docs: README walkthrough on public USGS 3DEP data (`make sample`), WA datum table, runbook, data sources, argus-atlas showcase. `make demo`/`up`/`down`.
+- Ingest refuses geographic and Web Mercator working CRSs (Mercator metres are not ground metres).
 - API on :8107 (`argus-survey serve`, compose `serve`): health, doctor, inputs, jobs, products by kind with HTTP Range (COPC streams), web map views (Web Mercator PNG + corners, WGS 84 GeoJSON), and `POST /jobs/{id}/{step}` for every step streaming Server-Sent Events. Read-only unless `SURVEY_ALLOW_PROCESS`; inputs are names under `SURVEY_DATA_DIR`.
 
 ## [0.1.0rc1] - 2026-10-31

@@ -279,6 +279,25 @@ def require_metric(record: CrsRecord, what: str) -> None:
             )
 
 
+# Projections whose "metres" are not ground metres away from the equator (scale = 1/cos φ).
+MERCATOR_EPSG = {3857, 3395, 900913, 3785, 102100}
+
+
+def require_survey_projection(record: CrsRecord, what: str) -> None:
+    """Refuse a geographic or Web Mercator working CRS: distances, areas and volumes would be wrong.
+
+    At 32° S a Web Mercator metre is 1.18 ground metres, so areas come out ~40 % large.
+    """
+    h = record.horizontal
+    if h.kind == "GeographicCRS":
+        raise SurveyError(f"{what} is geographic (degrees); pass --t-srs with a projected CRS (e.g. EPSG:7850+5711)")
+    if h.epsg in MERCATOR_EPSG or "mercator" in h.name.lower() and "transverse" not in h.name.lower():
+        raise SurveyError(
+            f"{what} is {h.name}: Mercator 'metres' are not ground metres (×1/cos latitude), so areas and volumes "
+            "would be badly wrong. Pass --t-srs with a survey projection (MGA2020 zone, PCG2020, UTM, …)"
+        )
+
+
 def same_crs(a: CrsRecord, b: CrsRecord) -> bool:
     if a.definition == b.definition:
         return True
