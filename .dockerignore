@@ -1,0 +1,19 @@
+# NOTE: .git is deliberately *not* ignored -- hatch-vcs reads the version from
+# git history at build time.
+.github
+.venv
+venv
+dist
+build
+*.egg-info
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Local data and job output: mounted at run time, never baked into the image
+.env
+data
+jobs

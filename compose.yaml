@@ -1,0 +1,73 @@
+# argus-survey in Docker: the CLI, the API + viewer, and the test suite from one image.
+#
+#   cp .env.example .env                                  # then edit paths, UID/GID, flags
+#   docker compose build
+#   docker compose run --rm survey doctor                 # any CLI command: `survey` is argus-survey
+#   docker compose run --rm survey run /data/in/site.laz --job site1 --res 0.5 --interval 0.5
+#   docker compose up -d serve                            # API + viewer on http://127.0.0.1:8107
+#   docker compose --profile test run --rm test           # the suite against real PDAL/GDAL/PROJ
+#
+# Paths given to the CLI are container paths: point clouds and vectors under /data/in
+# (read-only — inputs are never modified), job output under /data/jobs.
+name: argus-survey
+
+x-survey: &survey
+  image: ${SURVEY_IMAGE:-argus-survey:local}
+  build:
+    context: .
+    args:
+      EXTRAS: server,cli
+  # Files written to the mounts belong to you, not root. Bash does not export UID, so set it in .env.
+  user: "${UID:-1000}:${GID:-1000}"
+  environment:
+    HOME: /tmp
+    SURVEY_ALLOW_PROCESS: ${SURVEY_ALLOW_PROCESS:-}
+    SURVEY_CORS_ORIGINS: ${SURVEY_CORS_ORIGINS:-}
+  # Long syntax with create_host_path: false, so a mistyped *_HOST path fails the run instead of
+  # docker creating an empty root-owned directory that the container (your uid) cannot write.
+  volumes:
+    - type: bind
+      source: "${SURVEY_IN_HOST:-./data/in}"
+      target: /data/in
+      read_only: true
+      bind: {create_host_path: false}
+    - {type: bind, source: "${SURVEY_JOBS_HOST:-./data/jobs}", target: /data/jobs, bind: {create_host_path: false}}
+
+services:
+  survey:
+    <<: *survey
+    profiles: [cli]  # one-shot: `docker compose run --rm survey <command>`; never started by `up`
+    entrypoint: [argus-survey]
+    command: [--help]
+
+  serve:
+    <<: *survey
+    command: [argus-survey, serve, --host, 0.0.0.0, --port, "8107"]
+    ports:
+      - ${SURVEY_BIND:-127.0.0.1}:${SURVEY_PORT:-8107}:8107
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8107/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 2s
+
+  test:
+    image: argus-survey:test
+    build:
+      context: .
+      args:
+        EXTRAS: server,cli,dev
+    profiles: [test]
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /src
+    environment:
+      HOME: /tmp
+      PYTHONPATH: /src/src  # the checkout, not the copy baked into the image
+      PYTHONDONTWRITEBYTECODE: "1"  # keep the checkout free of container-written caches
+      SURVEY_TEST_REQUIRE_TOOLS: "1"
+    volumes:
+      - .:/src
+    command: [python, -m, pytest, -q, -p, no:cacheprovider]

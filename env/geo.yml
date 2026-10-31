@@ -1,0 +1,12 @@
+# The geospatial toolchain argus-survey shells out to: PDAL, GDAL and PROJ from
+# one channel, so PDAL links the same GDAL/PROJ the CLIs use. PDAL is no longer
+# packaged by Debian/Ubuntu, so conda-forge is the source (never pip).
+# This file is the human-edited spec; `make geo-lock` resolves it into
+# env/geo-linux-64.lock (explicit URLs + md5), which the image and CI install.
+name: argus-survey-geo
+channels:
+  - conda-forge
+dependencies:
+  - pdal=2.10
+  - libgdal-core=3.13
+  - proj=9.9

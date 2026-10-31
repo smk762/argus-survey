@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+# hatch-vcs writes this at build time (version derived from git tags)
+src/argus_survey/_version.py
+
+# Local job output
+jobs/
+
+# Docker Compose: host settings and the default mount dirs (kept by their .gitkeep)
+.env
+data/*/*
+!data/*/.gitkeep

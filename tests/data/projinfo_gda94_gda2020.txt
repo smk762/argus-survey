@@ -1,0 +1,39 @@
+Candidate operations found: 3
+-------------------------------------
+Operation No. 1:
+
+unknown id, Inverse of Map Grid of Australia zone 50 + GDA94 to GDA2020 (1) + Map Grid of Australia zone 50, 0.01 m, Australia including Lord Howe Island, Macquarie Island, Ashmore and Cartier Islands, Christmas Island, Cocos (Keeling) Islands, Norfolk Island. All onshore and offshore.
+
+PROJ string:
++proj=pipeline
+  +step +inv +proj=utm +zone=50 +south +ellps=GRS80
+  +step +proj=push +v_3
+  +step +proj=cart +ellps=GRS80
+  +step +proj=helmert +x=0.06155 +y=-0.01087 +z=-0.04019 +rx=-0.0394924
+        +ry=-0.0327221 +rz=-0.0328979 +s=-0.009994 +convention=coordinate_frame
+  +step +inv +proj=cart +ellps=GRS80
+  +step +proj=pop +v_3
+  +step +proj=utm +zone=50 +south +ellps=GRS80
+
+-------------------------------------
+Operation No. 2:
+
+unknown id, Inverse of Map Grid of Australia zone 50 + GDA94 to GDA2020 (3) + Map Grid of Australia zone 50, 0.05 m, Australia - Australian Capital Territory; New South Wales; Northern Territory; Queensland; South Australia; Tasmania; Western Australia; Victoria.
+
+PROJ string:
++proj=pipeline
+  +step +inv +proj=utm +zone=50 +south +ellps=GRS80
+  +step +proj=hgridshift +grids=au_icsm_GDA94_GDA2020_conformal.tif
+  +step +proj=utm +zone=50 +south +ellps=GRS80
+
+-------------------------------------
+Operation No. 3:
+
+unknown id, Inverse of Map Grid of Australia zone 50 + GDA94 to GDA2020 (2) + Map Grid of Australia zone 50, 0.05 m, Australia - Australian Capital Territory; New South Wales; Northern Territory; Queensland; South Australia; Tasmania; Western Australia; Victoria.
+
+PROJ string:
++proj=pipeline
+  +step +inv +proj=utm +zone=50 +south +ellps=GRS80
+  +step +proj=hgridshift
+        +grids=au_icsm_GDA94_GDA2020_conformal_and_distortion.tif
+  +step +proj=utm +zone=50 +south +ellps=GRS80
