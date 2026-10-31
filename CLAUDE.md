@@ -39,6 +39,9 @@ It is judged on **correct datums, honest accuracy numbers and reproducible outpu
 - `accuracy.py` — ASPRS ed. 2: RMSE only (no 95 %), ≥30 checks, product RMSE = √(data² + checkpoints²), NVA pass/fail vs `--class-cm`, VVA reported as found; check points transformed with `cct` through the selected operation.
 - `profile.py` — densified line → bilinear samples → CSV + pure-Python SVG (voids break the line).
 - `pipeline.py` — `run_all` (`argus-survey run`).
+- `report.py` — self-contained printable `report.html` (no JS; PNG thumbnails as data URIs; figures link to `#cmd-N`).
+- `overlays.py` — web views for the viewer (EPSG:3857 PNG + lon/lat corners; WGS 84 GeoJSON), cached in `<job>/.web/`, **not** recorded in the sidecar (a GET must not change `job.json`).
+- `server/app.py` — FastAPI :8107. `WriteGuard` refuses every POST unless `SURVEY_ALLOW_PROCESS`; steps run in a thread and stream SSE (`start`, `step`, `command`, `warning`, `done`|`error`) via `Job.listeners`; one step per job at a time (409). `server/static/viewer.html` is the viewer (`examples/viewer.html` links to it).
 - `cli.py` — Typer CLI.
 
 `tests/` — `conftest.py` marks tool-backed tests `tools`; they skip without the tools unless `SURVEY_TEST_REQUIRE_TOOLS=1`. `tests/data/` holds captured *text* tool output for pure-Python parser tests (no binary fixtures, ever).

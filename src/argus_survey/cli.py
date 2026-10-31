@@ -658,5 +658,33 @@ def report(job: JobOpt = None, out: OutOpt = None) -> None:
     console.print(f"[green]report[/] {path}")
 
 
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", "-p")] = config.DEFAULT_PORT,
+    cors: Annotated[bool, typer.Option("--cors", help="Enable CORS for $SURVEY_CORS_ORIGINS")] = False,
+    allow_process: Annotated[
+        bool | None,
+        typer.Option(
+            "--allow-process/--read-only", help="Enable POST processing routes (default: $SURVEY_ALLOW_PROCESS)"
+        ),
+    ] = None,
+) -> None:
+    """Start the API and viewer on :8107 (read-only unless processing is allowed)."""
+    try:
+        import uvicorn
+    except ImportError as exc:  # pragma: no cover
+        raise fail(SurveyError("the server needs: pip install argus-survey[server]")) from exc
+    from argus_survey.server import create_app
+
+    _configure_logging(True)
+    allowed = config.process_allowed(allow_process)
+    console.print(
+        f"argus-survey {__version__} on http://{host}:{port}/viewer · "
+        + ("[yellow]processing ENABLED[/]" if allowed else "read-only")
+    )
+    uvicorn.run(create_app(cors=cors, allow_process=allowed), host=host, port=port, log_level="info")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

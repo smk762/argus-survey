@@ -16,7 +16,7 @@ import os
 import re
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -90,6 +90,15 @@ class Job:
         self.dir = job_dir
         self.sidecar = sidecar
         self._lock = threading.RLock()  # tiles run in parallel and all record through sink()
+        # (event, data) callbacks — the server streams them as SSE frames; never part of the sidecar
+        self.listeners: list[Callable[[str, dict[str, Any]], None]] = []
+
+    def emit(self, event: str, data: dict[str, Any]) -> None:
+        for listener in list(self.listeners):
+            try:
+                listener(event, data)
+            except Exception:  # a broken listener must never break a survey step
+                log.warning("job.listener_failed", job=self.id, event=event, exc_info=True)
 
     @property
     def id(self) -> str:
@@ -106,6 +115,17 @@ class Job:
         with self._lock:
             self.sidecar.commands.append(record)
             self.save()
+            index = len(self.sidecar.commands)
+        self.emit(
+            "command",
+            {
+                "index": index,
+                "step": record.step,
+                "tool": record.tool,
+                "seconds": record.seconds,
+                "returncode": record.returncode,
+            },
+        )
 
     def path(self, name: str) -> Path:
         return self.dir / name
@@ -144,12 +164,14 @@ class Job:
             self.sidecar.warnings.append(message)
             log.info("job.warning", job=self.id, message=message)
             self.save()
+            self.emit("warning", {"message": message})
 
     @contextmanager
     def step(self, name: str) -> Iterator[None]:
         """Time a step into ``timings`` and mark it done on success."""
         t0 = time.perf_counter()
         log.info("step.start", job=self.id, step=name)
+        self.emit("step", {"step": name, "state": "start"})
         yield
         self.sidecar.timings[name] = round(time.perf_counter() - t0, 3)
         if name not in self.sidecar.steps_done:
@@ -157,6 +179,7 @@ class Job:
         self.sidecar.tools = versions()
         self.save()
         log.info("step.done", job=self.id, step=name, seconds=self.sidecar.timings[name])
+        self.emit("step", {"step": name, "state": "done", "seconds": self.sidecar.timings[name]})
 
     def require_crs(self, step: str, *, height: bool) -> None:
         """Refuse *step* without a CRS — and, for height-dependent steps, without a vertical datum (rule 1)."""
