@@ -13,6 +13,8 @@ name: argus-survey
 
 x-survey: &survey
   image: ${SURVEY_IMAGE:-argus-survey:local}
+  # Always built from this checkout (layer-cached, so a no-op rebuild takes seconds); never pulled.
+  pull_policy: build
   build:
     context: .
     args:
@@ -56,6 +58,7 @@ services:
 
   test:
     image: argus-survey:test
+    pull_policy: build
     build:
       context: .
       args:
