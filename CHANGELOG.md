@@ -6,7 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0rc1] - 2026-10-31
+
+First release candidate: a usable CLI (milestones 1–5 of the build plan).
+
 ### Added
+- `report`: one self-contained, printable `report.html` per job (no JavaScript, embedded thumbnails), with a red banner when the vertical datum was assumed, every product's SHA256, figures linked to the commands that produced them, and the full command log. `run` now ends with it.
 - Scaffold from argus-pkg-template; Docker image on Ubuntu 26.04 with PDAL 2.10 / GDAL 3.13 / PROJ 9.9 from a pinned conda-forge lockfile, and datum grids (AUSGeoid2020, AUSGeoid09, GDA94→GDA2020 conformal+distortion, AGQG, GEOID18) verified by SHA256.
 - `argus-survey doctor`: tool versions, PDAL/GDAL drivers and algorithms, datum grids, and the surveyor transformations (GDA2020/GDA94 → MGA + AHD, NAD83(2011) → NAVD88) resolved without ballpark fallbacks.
 - One subprocess runner that records every command, and explicit coordinate-operation selection that refuses rather than falling back to a ballpark transform.

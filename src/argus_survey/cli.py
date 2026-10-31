@@ -646,5 +646,17 @@ def profile(
     )
 
 
+@app.command()
+def report(job: JobOpt = None, out: OutOpt = None) -> None:
+    """Write the self-contained, printable report.html for a job."""
+    from argus_survey.report import report as run_report
+
+    try:
+        path = run_report(_job(job, out))
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    console.print(f"[green]report[/] {path}")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

@@ -11,6 +11,7 @@ from argus_survey.ground import ground
 from argus_survey.ingest import ingest
 from argus_survey.jobs import Job
 from argus_survey.qa import qa
+from argus_survey.report import report
 from argus_survey.surfaces import surfaces
 
 
@@ -53,10 +54,6 @@ def run_all(
         echo(f"contours {c.features} lines at {c.interval} m")
     else:
         job.warn("No vertical datum: surfaces and contours were skipped (re-run with --assume-vertical if known)")
-    try:  # the report arrives in milestone 5; until then `run` stops after contours
-        from argus_survey.report import report  # type: ignore[import-not-found]
-    except ImportError:
-        return job
     path = report(job)
     echo(f"report   {path}")
     return job
