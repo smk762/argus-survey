@@ -61,10 +61,13 @@ jobs:
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # Same container setup as compose's `test` service, but run directly so the image
+      # just built from the GHA layer cache is used (compose's pull_policy: build would rebuild).
       - name: Full suite against real PDAL/GDAL/PROJ
         run: |
-          export UID GID="$(id -g)"
-          docker compose --profile test run --rm test
+          docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
+            -e HOME=/tmp -e PYTHONPATH=/src/src -e PYTHONDONTWRITEBYTECODE=1 -e SURVEY_TEST_REQUIRE_TOOLS=1 \
+            argus-survey:test python -m pytest -q -p no:cacheprovider
 
   build:
     runs-on: ubuntu-latest
