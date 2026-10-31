@@ -8,7 +8,8 @@ few trees whose canopy hides ground from the "camera" but not from the "laser".
 
 Points are written as CSV and turned into LAS by PDAL (``readers.text`` →
 ``writers.las``) with the CRS the caller asks for. Truth labels go in
-``UserData``: 0 ground, 1 stockpile, 2 building, 3 vegetation. Every point is
+``UserData``: 0 ground, 1 stockpile, 2 building, 3 vegetation, 4 noise (isolated
+low multipath points and high "birds"). Every point is
 written ``Classification = 1`` (unclassified): classifying is the toolkit's job.
 
 Pure-Python on purpose (``random`` with a fixed seed, no numpy): the geometry
@@ -26,7 +27,7 @@ from pathlib import Path
 
 from argus_survey.tools import CommandSink, pdal_pipeline
 
-TRUTH_GROUND, TRUTH_STOCKPILE, TRUTH_BUILDING, TRUTH_VEGETATION = 0, 1, 2, 3
+TRUTH_GROUND, TRUTH_STOCKPILE, TRUTH_BUILDING, TRUTH_VEGETATION, TRUTH_NOISE = 0, 1, 2, 3, 4
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class Scene:
             Tree(10.0, 52.0, 2.0, 6.5),
         )
     )
+    noise_points: int = 30  # isolated outliers: half 10-40 m below ground, half 20-60 m above
     photogrammetry: bool = False  # True: no returns info, RGB, no ground under canopy
     seed: int = 762
 
@@ -168,6 +170,11 @@ def points(scene: Scene) -> list[list[float | int]]:
         zg = scene.ground_z(x, y)
         for z in _steps(zg + 0.3, scene.roof_z(), 0.5):
             add(x, y, z, 480, 1, 1, TRUTH_BUILDING, (140, 140, 140))
+    # isolated outliers, well clear of every surface
+    for k in range(scene.noise_points):
+        x, y = rnd.uniform(2, scene.width - 2), rnd.uniform(2, scene.height - 2)
+        dz = -rnd.uniform(10, 40) if k % 2 == 0 else rnd.uniform(20, 60)
+        add(x, y, scene.surface_z(x, y) + dz, 50, 1, 1, TRUTH_NOISE, (255, 255, 255))
     return rows
 
 

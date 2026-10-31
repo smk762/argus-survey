@@ -225,6 +225,10 @@ class JobSidecar(_Model):
     crs: CrsRecord | None = None
     inputs: list[InputRecord] = Field(default_factory=list)
     ingest: IngestRecord | None = None
+    qa: QaReport | None = None
+    ground: GroundReport | None = None
+    surfaces: SurfacesReport | None = None
+    contours: ContoursReport | None = None
     commands: list[CommandRecord] = Field(default_factory=list)
     products: dict[str, Product] = Field(default_factory=dict)
     timings: dict[str, float] = Field(default_factory=dict)
@@ -243,3 +247,154 @@ class JobDigest(_Model):
     steps_done: list[str]
     products: list[str]
     warnings: int
+
+
+# ── Grids and rasters ──────────────────────────────────────────────────────────
+
+
+class GridSpec(_Model):
+    """A raster grid snapped to multiples of its resolution, so two epochs at the same res share cells.
+
+    ``origin_x``/``origin_y`` are the lower-left corner (PDAL writers.gdal's convention); the
+    GeoTIFF's top-left is ``(origin_x, origin_y + height * res)``.
+    """
+
+    origin_x: float
+    origin_y: float
+    res: float
+    width: int
+    height: int
+
+    @property
+    def extent(self) -> tuple[float, float, float, float]:
+        return (
+            self.origin_x,
+            self.origin_y,
+            self.origin_x + self.width * self.res,
+            self.origin_y + self.height * self.res,
+        )
+
+    @property
+    def cell_area(self) -> float:
+        return self.res * self.res
+
+
+class RasterStats(_Model):
+    valid_cells: int
+    total_cells: int
+    minimum: float | None = None
+    maximum: float | None = None
+    mean: float | None = None
+    stddev: float | None = None
+
+    @property
+    def valid_fraction(self) -> float:
+        return self.valid_cells / self.total_cells if self.total_cells else 0.0
+
+
+# ── QA ─────────────────────────────────────────────────────────────────────────
+
+
+class ClassCount(_Model):
+    code: int
+    name: str
+    count: int
+    percent: float
+
+
+class ValueCount(_Model):
+    value: int
+    count: int
+    percent: float
+
+
+class DensityStats(_Model):
+    res: float
+    mean: float
+    p5: float
+    p50: float
+    p95: float
+    covered_cells: int
+
+
+class GapStats(_Model):
+    threshold: float  # pts/m²
+    threshold_rule: str
+    cells: int
+    area_m2: float
+    percent_of_coverage: float
+
+
+class OutlierStats(_Model):
+    method: str
+    params: dict[str, Any]
+    count: int
+    percent: float
+
+
+class QaReport(_Model):
+    points: int
+    bounds: Bounds3D
+    coverage_area_m2: float
+    coverage_hex_edge: float
+    source_type: SourceType
+    density: DensityStats
+    classes: list[ClassCount]
+    returns: list[ValueCount]
+    outliers: OutlierStats
+    gaps: GapStats
+    tiles: int = 1
+
+
+# ── Ground ─────────────────────────────────────────────────────────────────────
+
+
+class GroundReport(_Model):
+    method: Literal["smrf", "csf"]
+    params: dict[str, Any]
+    outlier_params: dict[str, Any]
+    points: int
+    ground_points: int
+    ground_percent: float
+    noise_points: int
+    ground_density: float  # ground pts per m² of coverage
+    ground_spacing: float  # 1/sqrt(density), metres
+    reset_classes: bool
+    normalised_returns: bool
+    tiles: int
+    tile_size: float
+    tile_buffer: float
+
+
+# ── Surfaces ───────────────────────────────────────────────────────────────────
+
+
+class SurfaceRecord(_Model):
+    kind: Literal["dtm", "dsm", "chm"]
+    method: str  # e.g. "idw r=0.707 m over class 2"
+    output_type: str
+    radius: float | None
+    window_size: int
+    points_used: str  # the selection, in words
+    void_percent: float  # of coverage, before any fill
+    void_percent_after_fill: float | None = None
+    filled_max_distance: int | None = None
+    stats: RasterStats
+
+
+class SurfacesReport(_Model):
+    grid: GridSpec
+    surfaces: dict[str, SurfaceRecord] = Field(default_factory=dict)
+    resolution_warning: str | None = None
+
+
+class ContoursReport(_Model):
+    interval: float
+    index_every: int | None
+    source: str
+    features: int
+    min_elev: float | None
+    max_elev: float | None
+
+
+JobSidecar.model_rebuild()

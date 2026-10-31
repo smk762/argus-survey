@@ -26,6 +26,14 @@ It is judged on **correct datums, honest accuracy numbers and reproducible outpu
 - `jobs.py` — `JobStore`, strict id charset, and `Job`: `sink` (runner → sidecar, persisted per command), `add_product` (SHA256), `step()` (timings), `require_crs(height=)` (rule 1's refusal).
 - `ingest.py` — `info_report`, `ingest`: pin inputs, resolve source CRS (`--s-srs`, `--assume-vertical EPSG:x|ellipsoidal`), resolve target (`--t-srs`; a 2D target keeps the source heights explicitly), select the operation, then per input a **streaming** PDAL pipeline (projpipeline → crop → stats → LAZ) and **untwine** → `points.copc.laz`; counts reconciled, LiDAR/photogrammetry detected from returns/RGB.
 - `synthetic.py` — seeded analytic scenes (tilted plane, cone stockpile πr²h/3, building, trees; truth in `UserData`) and check points; `argus-survey synth`. The test fixtures *and* the demo data.
+- `grid.py` — `snap()` (origin = floor(min/res)·res, so epochs share cells), `same_grid`/`aligned`, writers.gdal and `-te/-tr` options.
+- `rasters.py` — `gdalinfo -json` facts, exact `stats()` (with `GDAL_PAM_ENABLED=NO`), `read_values()` (ENVI raw → `array`, for modest rasters), `calc()` (`gdal raster calc`), `sample()` (`gdal raster pixel-info -r bilinear`, batch), `set_crs()`.
+- `tiling.py` — buffered tiles for non-streamable PDAL filters; cores are half-open so they partition the plane, and parts **must** add up to the source count before untwine merges them.
+- `qa.py` — streaming stats + hexbin boundary (edge sized from density) + count raster; density percentiles, gaps (25% of median by default), outliers counted per tile (3σ).
+- `ground.py` — per tile: reset classes → outliers (class 7) → SMRF/CSF ignoring 7; photogrammetry returns normalised 1-of-1 (recorded); ground density/spacing.
+- `surfaces.py` — DTM (IDW r=res·√2 of class 2), DSM (binned max; first returns for LiDAR), CHM (tiled hag_nn → binned max), void masks (1/0/255) and void % of coverage, optional fill re-masked to coverage, hillshade.
+- `contours.py` — gdal_contour → GPKG with `idx` (index contours) → GeoJSON.
+- `pipeline.py` — `run_all` (`argus-survey run`).
 - `cli.py` — Typer CLI.
 
 `tests/` — `conftest.py` marks tool-backed tests `tools`; they skip without the tools unless `SURVEY_TEST_REQUIRE_TOOLS=1`. `tests/data/` holds captured *text* tool output for pure-Python parser tests (no binary fixtures, ever).
@@ -59,6 +67,10 @@ The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docke
 - **PDAL exits 0 when every point fails to reproject** (it logs "falls outside grid" per point and writes garbage). Ingest passes `fatal_stderr=TRANSFORM_FATAL` to the runner and reconciles counts and bounds afterwards. Keep both.
 - `pdal info --summary` on a `.copc.laz` (readers.copc) has no LAS header block; COPC-ness comes from `reader`.
 - Drone scale: every ingest stage is streamable (`pdal pipeline --stream`); `writers.copc` is **not** used because it buffers the whole cloud — untwine builds the COPC out of core.
+- **writers.gdal's default radius mode smears** each point into neighbouring cells (radius res·√2): fine for IDW, wrong for max/count. DSM, density and CHM use `binmode: true`.
+- `gdal_rasterize -a_srs` drops the vertical part of a compound CRS, and `gdal raster calc` then refuses to mix it with a PDAL raster ("Input spatial reference systems are inconsistent"). Rasters carry the job's full compound CRS; stamp it with `rasters.set_crs` after rasterizing.
+- `gdal raster pixel-info` can't always write GeoJSON to `/vsistdout/`; write a temp file.
+- PDAL's automatic hexbin edge can be several times too coarse (coverage area doubled on the test scene); `qa.hexbin_edge` sizes it from density.
 - **Photogrammetry clouds** usually have `ReturnNumber = 0` and no classes: "first returns" selects nothing. Detect and record the source type; use all points for the DSM.
 - The conda lock includes an x86-64-v3 (AVX2) microarch marker; very old CPUs can't run the image.
 - **Branches:** `dev` is the default branch and takes feature PRs; `main` is protected and only receives `dev` → `main` release PRs. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading.

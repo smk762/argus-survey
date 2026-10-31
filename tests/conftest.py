@@ -103,3 +103,37 @@ def jobs_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "jobs"
     monkeypatch.setenv("SURVEY_JOBS_DIR", str(root))
     return root
+
+
+@pytest.fixture(scope="session")
+def ingested(las_mga_ahd: Path, tmp_path_factory: pytest.TempPathFactory):  # type: ignore[no-untyped-def]
+    """A job with the reference scene ingested (shared, read-only for tests that don't mutate it)."""
+    from argus_survey.ingest import ingest
+    from argus_survey.jobs import JobStore
+
+    root = tmp_path_factory.mktemp("jobs-shared")
+    job = JobStore(root).open("ref", create=True)
+    ingest(job, [las_mga_ahd])
+    return job
+
+
+def class_counts_by_truth(copc: Path, truth: int, *, min_height: float | None = None) -> dict[str, int]:
+    """Classification histogram of the points whose synthetic truth label (UserData) is *truth*.
+
+    *min_height*: only points more than this far above the scene's ground plane.
+    """
+    from argus_survey.ingest import parse_stats
+
+    stages: list[dict] = [
+        {"type": "readers.copc", "filename": str(copc)},
+        {"type": "filters.range", "limits": f"UserData[{truth}:{truth}]"},
+    ]
+    if min_height is not None:
+        s = synthetic.Scene()
+        e0, n0 = s.origin
+        plane = f"{s.base_z} + {s.slope_x} * (X - {e0}) + {s.slope_y} * (Y - {n0})"
+        stages.append({"type": "filters.expression", "expression": f"Z > {plane} + {min_height}"})
+    stages.append({"type": "filters.stats", "dimensions": "Classification", "count": "Classification"})
+    meta = pdal_pipeline(stages, step="test")
+    stats = [s for s in parse_stats(meta) if s.name == "Classification"]
+    return stats[0].counts if stats else {}

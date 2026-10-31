@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -88,6 +89,7 @@ class Job:
     def __init__(self, job_dir: Path, sidecar: JobSidecar) -> None:
         self.dir = job_dir
         self.sidecar = sidecar
+        self._lock = threading.RLock()  # tiles run in parallel and all record through sink()
 
     @property
     def id(self) -> str:
@@ -95,13 +97,15 @@ class Job:
 
     # ── persistence ──
     def save(self) -> None:
-        self.sidecar.updated_at = utcnow()
-        save_sidecar(self.dir, self.sidecar)
+        with self._lock:
+            self.sidecar.updated_at = utcnow()
+            save_sidecar(self.dir, self.sidecar)
 
     def sink(self, record: CommandRecord) -> None:
-        """The runner's command sink: append in run order and persist straight away."""
-        self.sidecar.commands.append(record)
-        self.save()
+        """The runner's command sink: append in run order and persist straight away (thread-safe)."""
+        with self._lock:
+            self.sidecar.commands.append(record)
+            self.save()
 
     def path(self, name: str) -> Path:
         return self.dir / name

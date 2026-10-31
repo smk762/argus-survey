@@ -63,4 +63,4 @@ extend-exclude = ["src/argus_survey/_version.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
-ignore = ["E501", "B008"]
+ignore = ["E501", "B008", "SIM108"]

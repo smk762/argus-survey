@@ -79,7 +79,7 @@ REQUIRED_PDAL_DRIVERS: tuple[str, ...] = (
 REQUIRED_GDAL_DRIVERS: tuple[str, ...] = ("GTiff", "COG", "PNG", "GPKG", "GeoJSON", "CSV")
 
 # `gdal raster <alg>` subcommands the package relies on.
-REQUIRED_GDAL_ALGORITHMS: tuple[str, ...] = ("calc", "zonal-stats", "pixel-info", "fill-nodata")
+REQUIRED_GDAL_ALGORITHMS: tuple[str, ...] = ("calc", "zonal-stats", "pixel-info", "fill-nodata", "polygonize", "edit")
 
 # Datum grids the image provisions (env/proj-grids.sha256). Required ones gate `doctor --strict`.
 GRID_MANIFEST = "argus-survey-grids.sha256"

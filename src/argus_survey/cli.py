@@ -247,5 +247,180 @@ def synth(
         console.print(f"wrote {checks}")
 
 
+WorkersOpt = Annotated[
+    int | None, typer.Option("--workers", min=1, help="Parallel tiles (default: SURVEY_WORKERS or ≤4)")
+]
+
+
+def _warnings(j: Job, before: int) -> None:
+    for w in j.sidecar.warnings[before:]:
+        console.print(f"[yellow]warning:[/] {w}")
+
+
+@app.command()
+def qa(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    density_res: Annotated[float, typer.Option("--density-res", help="Density grid cell size (m)")] = 1.0,
+    min_density: Annotated[
+        float | None, typer.Option("--min-density", help="Gap threshold in pts/m² (default: 25% of the median)")
+    ] = None,
+    workers: WorkersOpt = None,
+) -> None:
+    """Point count, density, class/return histograms, outliers, coverage boundary and gaps (qa.json)."""
+    from argus_survey.qa import qa as run_qa
+
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = run_qa(j, density_res=density_res, min_density=min_density, workers=workers)
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    d = r.density
+    console.print(
+        f"[green]qa[/] {r.points:,} points over {r.coverage_area_m2:,.0f} m² · "
+        f"density p5/p50/p95 {d.p5:.1f}/{d.p50:.1f}/{d.p95:.1f} pts/m² · "
+        f"outliers {r.outliers.count:,} ({r.outliers.percent:.2f}%) · gaps {r.gaps.area_m2:,.1f} m²"
+    )
+    _warnings(j, n)
+
+
+@app.command()
+def ground(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    method: Annotated[str, typer.Option("--method", help="smrf (default) or csf")] = "smrf",
+    slope: Annotated[float | None, typer.Option(help="SMRF slope (rise/run)")] = None,
+    window: Annotated[float | None, typer.Option(help="SMRF max window (m)")] = None,
+    threshold: Annotated[float | None, typer.Option(help="SMRF/CSF elevation threshold (m)")] = None,
+    scalar: Annotated[float | None, typer.Option(help="SMRF elevation scalar")] = None,
+    cell: Annotated[float | None, typer.Option(help="SMRF cell size (m)")] = None,
+    resolution: Annotated[float | None, typer.Option(help="CSF cloth resolution (m)")] = None,
+    rigidness: Annotated[int | None, typer.Option(help="CSF rigidness (1-3)")] = None,
+    keep_classes: Annotated[bool, typer.Option("--keep-classes", help="Don't reset existing classes first")] = False,
+    workers: WorkersOpt = None,
+) -> None:
+    """Classify ground (SMRF default, CSF option) per buffered tile; every point is kept (ground.copc.laz)."""
+    from argus_survey.ground import ground as run_ground
+
+    if method not in {"smrf", "csf"}:
+        raise fail(SurveyError("--method must be smrf or csf"))
+    if method == "smrf":
+        params = {"slope": slope, "window": window, "threshold": threshold, "scalar": scalar, "cell": cell}
+    else:
+        params = {"resolution": resolution, "threshold": threshold, "rigidness": rigidness}
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = run_ground(j, method=method, params=params, keep_classes=keep_classes, workers=workers)  # type: ignore[arg-type]
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    console.print(
+        f"[green]ground[/] {r.method.upper()} · {r.ground_points:,} ground points ({r.ground_percent:.1f}%) · "
+        f"ground density {r.ground_density:.2f} pts/m² (spacing {r.ground_spacing:.2f} m) · "
+        f"noise {r.noise_points:,} · {r.tiles} tile(s)"
+    )
+    _warnings(j, n)
+
+
+@app.command()
+def surfaces(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    res: Annotated[float, typer.Option("--res", help="Cell size (m)")] = 0.5,
+    dtm: Annotated[bool, typer.Option("--dtm/--no-dtm")] = True,
+    dsm: Annotated[bool, typer.Option("--dsm/--no-dsm")] = True,
+    chm: Annotated[bool, typer.Option("--chm/--no-chm")] = True,
+    fill_voids: Annotated[
+        int | None, typer.Option("--fill-voids", min=1, help="Fill DTM voids up to N cells across (recorded)")
+    ] = None,
+    workers: WorkersOpt = None,
+) -> None:
+    """DTM (ground IDW), DSM (max), CHM (height above ground) on a snapped grid, with void masks and hillshade."""
+    from argus_survey.surfaces import surfaces as run_surfaces
+
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = run_surfaces(j, res=res, dtm=dtm, dsm=dsm, chm=chm, fill_voids=fill_voids, workers=workers)
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    g = r.grid
+    console.print(f"[green]surfaces[/] {g.width}×{g.height} cells at {g.res} m, origin ({g.origin_x}, {g.origin_y})")
+    for kind, s in r.surfaces.items():
+        fill = f" → {s.void_percent_after_fill:.2f}% after fill" if s.void_percent_after_fill is not None else ""
+        console.print(
+            f"  {kind.upper()}: {s.stats.minimum:.3f} … {s.stats.maximum:.3f} m · voids {s.void_percent:.2f}%"
+            f"{fill} · {s.method}"
+        )
+    _warnings(j, n)
+
+
+@app.command()
+def contours(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    interval: Annotated[float, typer.Option("--interval", help="Contour interval (m)")] = 0.5,
+    index: Annotated[int, typer.Option("--index", help="Every N-th contour is an index contour (0: none)")] = 5,
+) -> None:
+    """Contours from the DTM (contours.gpkg + contours.geojson, index contours flagged)."""
+    from argus_survey.contours import contours as run_contours
+
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = run_contours(j, interval=interval, index=index or None)
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    console.print(f"[green]contours[/] {r.features} lines every {r.interval} m from {r.min_elev} to {r.max_elev} m")
+    _warnings(j, n)
+
+
+@app.command()
+def run(
+    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ files or directories")],
+    job: JobOpt = None,
+    out: OutOpt = None,
+    res: Annotated[float, typer.Option("--res", help="Surface cell size (m)")] = 0.5,
+    interval: Annotated[float, typer.Option("--interval", help="Contour interval (m)")] = 0.5,
+    t_srs: Annotated[str | None, typer.Option("--t-srs", help="Target CRS, e.g. EPSG:7850+5711")] = None,
+    s_srs: Annotated[str | None, typer.Option("--s-srs", help="Source CRS when the files have none")] = None,
+    assume_vertical: Annotated[
+        str | None, typer.Option("--assume-vertical", help="EPSG:<code> or 'ellipsoidal'")
+    ] = None,
+    operation: Annotated[str | None, typer.Option("--operation", help="Pin a transformation by name")] = None,
+    crop: Annotated[Path | None, typer.Option("--crop", help="Polygon to keep points inside")] = None,
+    crop_srs: Annotated[str | None, typer.Option("--crop-srs", help="CRS of the crop polygon if it has none")] = None,
+    method: Annotated[str, typer.Option("--method", help="Ground filter: smrf or csf")] = "smrf",
+    fill_voids: Annotated[int | None, typer.Option("--fill-voids", min=1, help="Fill DTM voids up to N cells")] = None,
+    workers: WorkersOpt = None,
+) -> None:
+    """ingest → qa → ground → surfaces → contours → report, in one job."""
+    from argus_survey.pipeline import run_all
+
+    try:
+        j = _job(job, out, create=True)
+        run_all(
+            j,
+            inputs,
+            res=res,
+            interval=interval,
+            t_srs=t_srs,
+            s_srs=s_srs,
+            assume_vertical=assume_vertical,
+            operation=operation,
+            crop=crop,
+            crop_srs=crop_srs,
+            method=method,
+            fill_voids=fill_voids,
+            workers=workers,
+            echo=console.print,
+        )
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    console.print(f"[bold green]done[/] job [bold]{j.id}[/] · {len(j.sidecar.products)} products in {j.dir}")
+    _warnings(j, 0)
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
