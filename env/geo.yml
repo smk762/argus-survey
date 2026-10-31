@@ -10,3 +10,6 @@ dependencies:
   - pdal=2.10
   - libgdal-core=3.13
   - proj=9.9
+  # Streaming COPC builder from the PDAL project: bounded memory for drone-scale clouds,
+  # where writers.copc would hold every point in RAM.
+  - untwine

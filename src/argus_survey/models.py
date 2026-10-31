@@ -110,3 +110,136 @@ class TransformOp(_Model):
     grids: list[str] = Field(default_factory=list)
     chosen_by: Literal["proj-default", "user"] = "proj-default"
     candidates: list[OperationCandidate] = Field(default_factory=list)
+
+
+HeightReference = Literal["gravity", "ellipsoidal", "none"]
+
+
+class CrsRef(_Model):
+    """One CRS (or one component of a compound CRS), as identified."""
+
+    name: str
+    epsg: int | None = None
+    kind: str  # PROJJSON type: ProjectedCRS, GeographicCRS, VerticalCRS, …
+    units: str = "metre"
+    unit_factor: float = 1.0  # metres per unit
+    north_first: bool = False  # authority axis order is (north, east) / (lat, lon)
+
+
+class CrsRecord(_Model):
+    """Everything a surveyor needs to know about the coordinates of a dataset (CLAUDE.md rule 1)."""
+
+    definition: str  # what PDAL/PROJ are given: "EPSG:7850+5711", or WKT2 when there is no code
+    name: str
+    horizontal: CrsRef
+    vertical: CrsRef | None = None
+    height_reference: HeightReference = "none"
+    vertical_assumed: str | None = None  # why the vertical datum was assumed, if it was
+    geoid: str | None = None  # the geoid grid applied to reach this CRS, if any
+    epoch: float | None = None  # coordinate epoch (dynamic datums only)
+    source: Literal["file", "user", "transformed"] = "file"
+
+    @property
+    def has_height_datum(self) -> bool:
+        return self.height_reference != "none"
+
+
+# ── Point clouds ───────────────────────────────────────────────────────────────
+
+
+class Bounds3D(_Model):
+    minx: float
+    miny: float
+    minz: float
+    maxx: float
+    maxy: float
+    maxz: float
+
+    @property
+    def area(self) -> float:
+        return max(self.maxx - self.minx, 0.0) * max(self.maxy - self.miny, 0.0)
+
+
+SourceType = Literal["lidar", "photogrammetry", "unknown"]
+
+
+class CloudSummary(_Model):
+    """Header-level facts about a point cloud (``pdal info --summary``)."""
+
+    count: int
+    bounds: Bounds3D
+    dimensions: list[str] = Field(default_factory=list)
+    las_version: str | None = None
+    point_format: int | None = None
+    copc: bool = False
+    scale: tuple[float, float, float] | None = None
+
+
+class InputRecord(FileRef):
+    """An input file, pinned. ``path`` is absolute."""
+
+    role: str = "points"
+    summary: CloudSummary | None = None
+
+
+class DimStats(_Model):
+    name: str
+    count: int
+    minimum: float
+    maximum: float
+    average: float
+    stddev: float
+    counts: dict[str, int] = Field(default_factory=dict)  # value -> count, for enumerated dims
+
+
+class Product(FileRef):
+    """A job output. ``path`` is relative to the job dir."""
+
+    kind: str
+    step: str
+    description: str = ""
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class IngestRecord(_Model):
+    inputs_count: int
+    output_count: int
+    cropped: bool = False
+    crop: str | None = None  # description of the crop applied
+    scale: float
+    source_crs: CrsRecord
+    transform: TransformOp | None = None
+    source_type: SourceType = "unknown"
+    stats: list[DimStats] = Field(default_factory=list)
+
+
+class JobSidecar(_Model):
+    """``job.json`` — the API contract and the provenance record of a job."""
+
+    schema_version: int = SURVEY_VERSION
+    job_id: str
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    package_version: str
+    tools: ToolVersions = Field(default_factory=ToolVersions)
+    crs: CrsRecord | None = None
+    inputs: list[InputRecord] = Field(default_factory=list)
+    ingest: IngestRecord | None = None
+    commands: list[CommandRecord] = Field(default_factory=list)
+    products: dict[str, Product] = Field(default_factory=dict)
+    timings: dict[str, float] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    steps_done: list[str] = Field(default_factory=list)
+
+
+class JobDigest(_Model):
+    """One row of ``GET /jobs``."""
+
+    job_id: str
+    created_at: datetime
+    updated_at: datetime
+    crs: str | None
+    points: int | None
+    steps_done: list[str]
+    products: list[str]
+    warnings: int

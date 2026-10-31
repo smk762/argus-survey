@@ -94,3 +94,11 @@ def test_doctor_runs() -> None:
     assert "exe:pdal" in names and "pdal:drivers" in names
     failing = [c for c in report.checks if c.name.startswith(("exe:", "pdal:", "gdal:", "version:")) and not c.ok]
     assert not failing, failing
+
+
+def test_fatal_stderr_turns_exit_zero_into_failure() -> None:
+    code = "import sys; sys.stderr.write('(filters.projpipeline Error) Coordinate to transform falls outside grid\\n')"
+    records: list[CommandRecord] = []
+    with pytest.raises(tools.ToolError, match="refused"):
+        tools.run([sys.executable, "-c", code], step="t", sink=records.append, fatal_stderr=("falls outside grid",))
+    assert records[0].returncode == 0

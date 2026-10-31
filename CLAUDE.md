@@ -22,7 +22,10 @@ It is judged on **correct datums, honest accuracy numbers and reproducible outpu
 - `models.py` — Pydantic v2 wire types. **`JobSidecar` (`job.json`) is the API contract.** `SURVEY_VERSION` is its schema version.
 - `config.py` — `SURVEY_*` env knobs, `process_allowed()`, `resolve_under_root()` (the API's path fence, ported from atlas).
 - `tools.py` — **the one subprocess runner** (`run`, `run_json`, `pdal_pipeline`), `versions()`, PROJ search paths/grid lookup, `doctor()`.
-- `crs.py` — `select_operation()`: explicit coordinate-operation choice (see conventions), CRS record parsing.
+- `crs.py` — `select_operation()`: explicit coordinate-operation choice (see gotchas); `record_from_projjson()` (compound/3D/BoundCRS/foot units → `CrsRecord`), `pdal_coord_op()` (axis-order compensation), `promote_3d()`, `require_metric()`, `lonlat_bbox()`.
+- `jobs.py` — `JobStore`, strict id charset, and `Job`: `sink` (runner → sidecar, persisted per command), `add_product` (SHA256), `step()` (timings), `require_crs(height=)` (rule 1's refusal).
+- `ingest.py` — `info_report`, `ingest`: pin inputs, resolve source CRS (`--s-srs`, `--assume-vertical EPSG:x|ellipsoidal`), resolve target (`--t-srs`; a 2D target keeps the source heights explicitly), select the operation, then per input a **streaming** PDAL pipeline (projpipeline → crop → stats → LAZ) and **untwine** → `points.copc.laz`; counts reconciled, LiDAR/photogrammetry detected from returns/RGB.
+- `synthetic.py` — seeded analytic scenes (tilted plane, cone stockpile πr²h/3, building, trees; truth in `UserData`) and check points; `argus-survey synth`. The test fixtures *and* the demo data.
 - `cli.py` — Typer CLI.
 
 `tests/` — `conftest.py` marks tool-backed tests `tools`; they skip without the tools unless `SURVEY_TEST_REQUIRE_TOOLS=1`. `tests/data/` holds captured *text* tool output for pure-Python parser tests (no binary fixtures, ever).
@@ -53,6 +56,9 @@ The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docke
 
 - **Never let PROJ pick a transformation at run time.** `crs.select_operation` asks `projinfo --hide-ballpark` for candidates, takes the first whose `+grids=` files are all on disk (or the one `--operation` names), and returns its PROJ string; PDAL then runs that exact string through `filters.projpipeline`. `filters.reprojection` with EPSG codes would let PROJ silently fall back to a ballpark operation when a geoid grid is missing (ellipsoidal heights labelled AHD — ~30 m wrong in Perth). `projinfo --grid-check discard_missing` was tested and does **not** reliably drop such candidates; the on-disk check is ours. A `@grid` (optional) marker is treated as required.
 - **GDA94 → GDA2020 has several valid operations.** PROJ ranks the 7-parameter Helmert first; legacy WA cadastral/control-derived data often warrants the ICSM conformal + distortion grid. Record all candidates; let the user pin one (`--operation "GDA94 to GDA2020 (2)"`).
+- **PDAL exits 0 when every point fails to reproject** (it logs "falls outside grid" per point and writes garbage). Ingest passes `fatal_stderr=TRANSFORM_FATAL` to the runner and reconciles counts and bounds afterwards. Keep both.
+- `pdal info --summary` on a `.copc.laz` (readers.copc) has no LAS header block; COPC-ness comes from `reader`.
+- Drone scale: every ingest stage is streamable (`pdal pipeline --stream`); `writers.copc` is **not** used because it buffers the whole cloud — untwine builds the COPC out of core.
 - **Photogrammetry clouds** usually have `ReturnNumber = 0` and no classes: "first returns" selects nothing. Detect and record the source type; use all points for the DSM.
 - The conda lock includes an x86-64-v3 (AVX2) microarch marker; very old CPUs can't run the image.
 - **Branches:** `dev` is the default branch and takes feature PRs; `main` is protected and only receives `dev` → `main` release PRs. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading.

@@ -47,6 +47,7 @@ REQUIRED_EXECUTABLES: tuple[str, ...] = (
     "gdalwarp",
     "gdaldem",
     "gdal_contour",
+    "gdaltransform",
     "ogr2ogr",
     "projinfo",
     "cs2cs",
@@ -126,8 +127,13 @@ def run(
     env: dict[str, str] | None = None,
     timeout: float | None = None,
     cwd: Path | None = None,
+    fatal_stderr: Sequence[str] = (),
 ) -> subprocess.CompletedProcess[str]:
-    """Run one external command. Records it to *sink* (even when it fails), raises on non-zero exit."""
+    """Run one external command. Records it to *sink* (even when it fails), raises on non-zero exit.
+
+    *fatal_stderr*: substrings that make a zero exit a failure. PDAL, for one, logs per-point
+    reprojection errors and still exits 0 — a silent datum failure we refuse to accept.
+    """
     argv = [str(a) for a in argv]
     started_at = utcnow()
     t0 = time.perf_counter()
@@ -162,6 +168,10 @@ def run(
     if proc.returncode != 0:
         log.warning("tool.failed", step=step, argv=argv, stderr=proc.stderr[-STDERR_TAIL:])
         raise ToolError(argv, proc.returncode, proc.stderr)
+    hits = [pat for pat in fatal_stderr if pat in proc.stderr]
+    if hits:
+        log.warning("tool.fatal_stderr", step=step, argv=argv, patterns=hits)
+        raise ToolError(argv, proc.returncode, f"{proc.stderr}\nrefused: stderr reported {hits[0]!r}")
     return proc
 
 
@@ -180,12 +190,27 @@ def pdal_pipeline(
     step: str,
     sink: CommandSink | None = None,
     timeout: float | None = None,
+    stream: bool = False,
+    fatal_stderr: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Run a PDAL pipeline (JSON on stdin) and return its output metadata."""
+    """Run a PDAL pipeline (JSON on stdin) and return its output metadata.
+
+    *stream*: run in PDAL's streaming mode (bounded memory; every stage must be streamable).
+    """
     with tempfile.TemporaryDirectory(prefix="argus-survey-") as tmp:
         meta = Path(tmp) / "metadata.json"
         argv = ["pdal", "pipeline", "--stdin", "--metadata", str(meta)]
-        run(argv, step=step, sink=sink, stdin=json.dumps({"pipeline": stages}), pipeline=stages, timeout=timeout)
+        if stream:
+            argv.append("--stream")
+        run(
+            argv,
+            step=step,
+            sink=sink,
+            stdin=json.dumps({"pipeline": stages}),
+            pipeline=stages,
+            timeout=timeout,
+            fatal_stderr=fatal_stderr,
+        )
         if not meta.is_file():
             return {}
         return json.loads(meta.read_text(encoding="utf-8"))
