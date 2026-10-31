@@ -29,7 +29,13 @@ RUN micromamba create -y -q -p /opt/geo -f /tmp/geo.lock \
     && micromamba clean -y -a -q \
     # Headers, static libs and docs are build-time only; conda-meta stays (doctor reads versions from it).
     && rm -rf /opt/geo/include /opt/geo/share/doc /opt/geo/share/man /opt/geo/man \
-    && find /opt/geo/lib -name '*.a' -delete
+    && find /opt/geo/lib -name '*.a' -delete \
+    # conda-forge's PDAL ships optional plugins (HDF, icebridge) whose libraries the
+    # package doesn't depend on; drop any plugin that can't load so every `pdal` call
+    # isn't prefixed by load errors on stderr.
+    && for so in /opt/geo/lib/libpdal_plugin_*.so; do \
+        if LD_LIBRARY_PATH=/opt/geo/lib ldd "$so" | grep -q 'not found'; then echo "drop $so"; rm "$so"; fi; \
+    done
 
 COPY env/proj-grids.sha256 /tmp/proj-grids.sha256
 RUN cd /opt/geo/share/proj \

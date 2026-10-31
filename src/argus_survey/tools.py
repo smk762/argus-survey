@@ -203,14 +203,14 @@ def parse_version(pattern: re.Pattern[str], text: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _version_output(argv: list[str]) -> str:
+def _version_output(argv: list[str], *, stdout_only: bool = False) -> str:
     if shutil.which(argv[0]) is None:
         return ""
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, env=child_env(), timeout=30, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return ""
-    return proc.stdout + proc.stderr
+    return proc.stdout if stdout_only else proc.stdout + proc.stderr
 
 
 @functools.cache
@@ -233,7 +233,7 @@ def tools_available() -> bool:
 
 @functools.cache
 def proj_search_paths() -> tuple[Path, ...]:
-    out = _version_output(["projinfo", "--searchpaths"])
+    out = _version_output(["projinfo", "--searchpaths"], stdout_only=True)
     return tuple(Path(line.strip()) for line in out.splitlines() if line.strip().startswith("/"))
 
 
@@ -268,7 +268,7 @@ def read_grid_manifest(path: Path) -> dict[str, str]:
 
 
 def _pdal_drivers() -> set[str]:
-    out = _version_output(["pdal", "--drivers", "--showjson"])
+    out = _version_output(["pdal", "--drivers", "--showjson"], stdout_only=True)
     try:
         return {d["name"] for d in json.loads(out)}
     except (json.JSONDecodeError, KeyError, TypeError):
@@ -276,7 +276,7 @@ def _pdal_drivers() -> set[str]:
 
 
 def _gdal_drivers() -> set[str]:
-    out = _version_output(["gdal", "--drivers"])
+    out = _version_output(["gdal", "--drivers"], stdout_only=True)
     try:
         return {d["short_name"] for d in json.loads(out)}
     except (json.JSONDecodeError, KeyError, TypeError):
