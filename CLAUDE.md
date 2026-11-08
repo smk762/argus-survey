@@ -19,7 +19,7 @@ It is judged on **correct datums, honest accuracy numbers and reproducible outpu
 
 `src/argus_survey/`:
 
-- `models.py` — Pydantic v2 wire types. **`JobSidecar` (`job.json`) is the API contract.** `SURVEY_VERSION` is its schema version. The API request bodies, `HealthInfo` and the SSE event payloads live here too; `WIRE_MODELS` → `schema/survey-wire.schema.json` (`argus-survey schema`; `tests/test_wire.py` fails when it is stale). [argus-survey-ui](../argus-survey-ui) generates its TypeScript types from that file, so a wire change means: regenerate, commit, then `npm run wire:local ../argus-survey` (or `wire:pull` after a tag) there.
+- `models.py` — Pydantic v2 wire types. **`JobSidecar` (`job.json`) is the API contract.** `SURVEY_VERSION` is its schema version. The API request bodies, `HealthInfo` and the SSE event payloads live here too; `WIRE_MODELS` → `schema/survey-wire.schema.json` (`argus-survey schema`; `tests/test_wire.py` fails when it is stale). [argus-sightline](../argus-sightline) generates its TypeScript types from that file, so a wire change means: regenerate, commit, then `npm run wire:local ../argus-survey` (or `wire:pull` after a tag) there.
 - `config.py` — `SURVEY_*` env knobs, `process_allowed()`, `resolve_under_root()` (the API's path fence, ported from atlas).
 - `tools.py` — **the one subprocess runner** (`run`, `run_json`, `pdal_pipeline`), `versions()`, PROJ search paths/grid lookup, `doctor()`.
 - `crs.py` — `select_operation()`: explicit coordinate-operation choice (see gotchas); `record_from_projjson()` (compound/3D/BoundCRS/foot units → `CrsRecord`), `pdal_coord_op()` (axis-order compensation), `promote_3d()`, `require_metric()`, `lonlat_bbox()`.
