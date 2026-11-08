@@ -499,4 +499,202 @@ class ProfileReport(_Model):
     surfaces: list[str]
 
 
+# ── API request bodies (inputs are names under SURVEY_DATA_DIR) ────────────────
+
+
+class _Body(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class IngestBody(_Body):
+    inputs: list[str] = Field(min_length=1)
+    t_srs: str | None = None
+    s_srs: str | None = None
+    assume_vertical: str | None = None
+    operation: str | None = None
+    crop: str | None = None
+    crop_srs: str | None = None
+    force: bool = False
+
+
+class QaBody(_Body):
+    density_res: float = Field(default=1.0, gt=0)
+    min_density: float | None = Field(default=None, ge=0)
+
+
+class GroundBody(_Body):
+    method: str = "smrf"
+    params: dict[str, float | int | bool] = Field(default_factory=dict)
+    keep_classes: bool = False
+
+
+class SurfacesBody(_Body):
+    res: float = Field(default=0.5, gt=0)
+    dtm: bool = True
+    dsm: bool = True
+    chm: bool = True
+    fill_voids: int | None = Field(default=None, ge=1)
+    dsm_method: str = "idw"
+
+
+class ContoursBody(_Body):
+    interval: float = Field(default=0.5, gt=0)
+    index: int | None = 5
+
+
+class VolumeBody(_Body):
+    polygon: str | None = None  # a polygon file under the data root
+    polygon_geojson: dict[str, Any] | None = None  # or a GeoJSON (Multi)Polygon geometry in WGS 84, drawn on the map
+    name: str | None = None  # zone name for a drawn polygon
+    base: str = "plane"  # plane | lowest-perimeter | surface:<name under the data root>
+    surface: str = "dtm"
+    polygon_srs: str | None = None
+    allow_voids: bool = False
+    resample: bool = False
+    base_vertical: str | None = None
+
+
+class CutfillBody(_Body):
+    design: str
+    polygon: str | None = None
+    polygon_geojson: dict[str, Any] | None = None  # a drawn GeoJSON (Multi)Polygon in WGS 84, instead of polygon
+    name: str | None = None
+    polygon_srs: str | None = None
+    surface: str = "dtm"
+    design_vertical: str | None = None
+    resample: bool = False
+    allow_voids: bool = False
+
+
+class ChangeBody(_Body):
+    against: str
+    lod: float | None = Field(default=None, ge=0)
+    lod_from_accuracy: bool = False
+    surface: str = "dtm"
+    polygon: str | None = None
+    polygon_srs: str | None = None
+
+
+class AccuracyBody(_Body):
+    checks: str
+    crs: str
+    cols: list[str] = Field(default_factory=lambda: ["id", "x", "y", "z"], min_length=4, max_length=4)
+    checkpoint_rmse: float | None = Field(default=None, ge=0)
+    class_cm: float | None = Field(default=None, gt=0)
+    surface: str = "dtm"
+
+
+class ProfileBody(_Body):
+    line: dict[str, Any] | None = None  # a GeoJSON LineString geometry in WGS 84 (lon, lat), e.g. drawn on the map
+    line_file: str | None = None  # or a line file under the data root
+    line_srs: str | None = None
+    step: float = Field(default=0.5, gt=0)
+
+
+class RunBody(IngestBody):
+    res: float = Field(default=0.5, gt=0)
+    interval: float = Field(default=0.5, gt=0)
+    method: str = "smrf"
+    fill_voids: int | None = Field(default=None, ge=1)
+
+
+class EmptyBody(_Body):
+    pass
+
+
+# ── API responses and Server-Sent Events ──────────────────────────────────────
+
+
+class HealthInfo(_Model):
+    """``GET /health``. ``read_only`` is true unless ``SURVEY_ALLOW_PROCESS`` is set: clients disable writes on it."""
+
+    status: Literal["ok"] = "ok"
+    service: Literal["argus-survey"] = "argus-survey"
+    version: str
+    read_only: bool
+    tools: ToolVersions
+
+
+class StartEvent(_Model):
+    """SSE ``start``: the step was accepted and is running."""
+
+    job: str
+    step: str
+
+
+class StepEvent(_Model):
+    """SSE ``step``: a (sub-)step started or finished (``run`` reports each of its steps)."""
+
+    step: str
+    state: Literal["start", "done"]
+    seconds: float | None = None
+
+
+class CommandEvent(_Model):
+    """SSE ``command``: one tool invocation finished; ``index`` is its 1-based place in ``job.json`` ``commands``."""
+
+    index: int
+    step: str
+    tool: str
+    seconds: float
+    returncode: int
+
+
+class WarningEvent(_Model):
+    """SSE ``warning``: also appended to ``job.json`` ``warnings``."""
+
+    message: str
+
+
+class DoneEvent(_Model):
+    """SSE ``done``: the step's own report in ``result``; the job's product kinds and warnings after it."""
+
+    job: str
+    step: str
+    result: dict[str, Any]
+    products: list[str]
+    warnings: list[str]
+
+
+class ErrorEvent(_Model):
+    """SSE ``error``: a refusal or tool failure; ``stderr`` is the tool's stderr tail when a command failed."""
+
+    message: str
+    stderr: str | None = None
+
+
+WIRE_MODELS: tuple[type[BaseModel], ...] = (
+    JobSidecar,
+    JobDigest,
+    DoctorReport,
+    HealthInfo,
+    IngestBody,
+    QaBody,
+    GroundBody,
+    SurfacesBody,
+    ContoursBody,
+    VolumeBody,
+    CutfillBody,
+    ChangeBody,
+    AccuracyBody,
+    ProfileBody,
+    RunBody,
+    EmptyBody,
+    StartEvent,
+    StepEvent,
+    CommandEvent,
+    WarningEvent,
+    DoneEvent,
+    ErrorEvent,
+)
+WIRE_TITLE = "argus-survey wire contract"
+
+
+def wire_schema_text() -> str:
+    """The committed ``schema/survey-wire.schema.json``: every wire model, sorted and newline-terminated."""
+    from argus_cortex.wire import render_schema
+
+    return render_schema(WIRE_MODELS, title=WIRE_TITLE)
+
+
 JobSidecar.model_rebuild()

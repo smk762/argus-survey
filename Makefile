@@ -1,6 +1,8 @@
 UV ?= uv
+# Where `make demo-kit` writes (the compose input mount is read-only, so the kit gets its own).
+KIT_HOST ?= $(CURDIR)/data/in
 
-.PHONY: help install lock geo-lock lint format test test-docker image doctor sample demo up down build clean
+.PHONY: help install lock geo-lock lint format test test-docker image doctor sample demo demo-kit schema up down build clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +42,12 @@ sample:  ## Fetch a small public USGS 3DEP LiDAR sample into data/in/usgs-sample
 
 demo:  ## Synthetic demo job (known answers) in data/jobs/demo — no download
 	docker compose run --rm --entrypoint sh survey -c 'cd /tmp && argus-survey synth site.laz --checks checks.csv && argus-survey run site.laz --job demo --res 0.5 --interval 0.5 && argus-survey accuracy --job demo --checks checks.csv --crs EPSG:7850+5711'
+
+demo-kit:  ## Every demo input with known answers (two epochs, checks, polygons, design) in data/in/kit
+	docker compose run --rm --entrypoint argus-survey -v "$(KIT_HOST):/kit" survey synth /kit/kit --kit
+
+schema:  ## Regenerate schema/survey-wire.schema.json (the wire contract UIs codegen against)
+	$(UV) run --no-sync argus-survey schema
 
 up:  ## Start the API + viewer on http://127.0.0.1:8107/viewer
 	docker compose up -d --build serve

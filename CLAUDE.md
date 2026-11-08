@@ -19,13 +19,13 @@ It is judged on **correct datums, honest accuracy numbers and reproducible outpu
 
 `src/argus_survey/`:
 
-- `models.py` — Pydantic v2 wire types. **`JobSidecar` (`job.json`) is the API contract.** `SURVEY_VERSION` is its schema version.
+- `models.py` — Pydantic v2 wire types. **`JobSidecar` (`job.json`) is the API contract.** `SURVEY_VERSION` is its schema version. The API request bodies, `HealthInfo` and the SSE event payloads live here too; `WIRE_MODELS` → `schema/survey-wire.schema.json` (`argus-survey schema`; `tests/test_wire.py` fails when it is stale). [argus-survey-ui](../argus-survey-ui) generates its TypeScript types from that file, so a wire change means: regenerate, commit, then `npm run wire:local ../argus-survey` (or `wire:pull` after a tag) there.
 - `config.py` — `SURVEY_*` env knobs, `process_allowed()`, `resolve_under_root()` (the API's path fence, ported from atlas).
 - `tools.py` — **the one subprocess runner** (`run`, `run_json`, `pdal_pipeline`), `versions()`, PROJ search paths/grid lookup, `doctor()`.
 - `crs.py` — `select_operation()`: explicit coordinate-operation choice (see gotchas); `record_from_projjson()` (compound/3D/BoundCRS/foot units → `CrsRecord`), `pdal_coord_op()` (axis-order compensation), `promote_3d()`, `require_metric()`, `lonlat_bbox()`.
 - `jobs.py` — `JobStore`, strict id charset, and `Job`: `sink` (runner → sidecar, persisted per command), `add_product` (SHA256), `step()` (timings), `require_crs(height=)` (rule 1's refusal).
 - `ingest.py` — `info_report`, `ingest`: pin inputs, resolve source CRS (`--s-srs`, `--assume-vertical EPSG:x|ellipsoidal`), resolve target (`--t-srs`; a 2D target keeps the source heights explicitly), select the operation, then per input a **streaming** PDAL pipeline (projpipeline → crop → stats → LAZ) and **untwine** → `points.copc.laz`; counts reconciled, LiDAR/photogrammetry detected from returns/RGB.
-- `synthetic.py` — seeded analytic scenes (tilted plane, cone stockpile πr²h/3, building, trees; truth in `UserData`) and check points; `argus-survey synth`. The test fixtures *and* the demo data.
+- `synthetic.py` — seeded analytic scenes (tilted plane, cone stockpile πr²h/3, building, trees; truth in `UserData`) and check points; `argus-survey synth`. The test fixtures *and* the demo data. `write_kit` (`synth DIR --kit`) writes every input the UI's guided demo needs plus `kit-truth.json`. Stockpiles and change are measured on the **DSM**: ground filtering (correctly) removes a pile from the DTM, which then reads ~10 % low on the kit's cone.
 - `grid.py` — `snap()` (origin = floor(min/res)·res, so epochs share cells), `same_grid`/`aligned`, writers.gdal and `-te/-tr` options.
 - `rasters.py` — `gdalinfo -json` facts, exact `stats()` (with `GDAL_PAM_ENABLED=NO`), `read_values()` (ENVI raw → `array`, for modest rasters), `calc()` (`gdal raster calc`), `sample()` (`gdal raster pixel-info -r bilinear`, batch), `set_crs()`.
 - `tiling.py` — buffered tiles for non-streamable PDAL filters; cores are half-open so they partition the plane, and parts **must** add up to the source count before untwine merges them.

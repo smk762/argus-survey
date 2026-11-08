@@ -108,7 +108,8 @@ so the choice can be checked.
 | `profile --line L --step S` | `profile.csv`, `profile.svg` |
 | `report` | `report.html` |
 | `run FILES…` | ingest → qa → ground → surfaces → contours → report |
-| `synth OUT.laz` | a synthetic scene with known answers |
+| `synth OUT.laz` | a synthetic scene with known answers (`--kit DIR`: every demo input, see `kit-truth.json`) |
+| `schema` | write the wire-contract JSON Schema UIs generate types from (`--check` in CI) |
 | `serve` | API + viewer on :8107 |
 
 Run any of them with `--help`. All of them take `--job ID` (under `SURVEY_JOBS_DIR`) or `--out DIR`.

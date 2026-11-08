@@ -1,0 +1,3061 @@
+{
+  "$defs": {
+    "AccuracyBody": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint_rmse": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checkpoint Rmse"
+        },
+        "checks": {
+          "title": "Checks",
+          "type": "string"
+        },
+        "class_cm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Class Cm"
+        },
+        "cols": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Cols",
+          "type": "array"
+        },
+        "crs": {
+          "title": "Crs",
+          "type": "string"
+        },
+        "surface": {
+          "default": "dtm",
+          "title": "Surface",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checks",
+        "crs"
+      ],
+      "title": "AccuracyBody",
+      "type": "object"
+    },
+    "AccuracyGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "excluded": {
+          "title": "Excluded",
+          "type": "integer"
+        },
+        "group": {
+          "enum": [
+            "NVA",
+            "VVA"
+          ],
+          "title": "Group",
+          "type": "string"
+        },
+        "max_abs_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Abs M"
+        },
+        "mean_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Mean M"
+        },
+        "meets_minimum_count": {
+          "title": "Meets Minimum Count",
+          "type": "boolean"
+        },
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "pass_fail_applies": {
+          "title": "Pass Fail Applies",
+          "type": "boolean"
+        },
+        "rmse_data_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Rmse Data M"
+        },
+        "rmse_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Rmse M"
+        },
+        "std_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Std M"
+        }
+      },
+      "required": [
+        "group",
+        "n",
+        "excluded",
+        "mean_m",
+        "std_m",
+        "rmse_data_m",
+        "rmse_m",
+        "max_abs_m",
+        "meets_minimum_count",
+        "pass_fail_applies"
+      ],
+      "title": "AccuracyGroup",
+      "type": "object"
+    },
+    "AccuracyReport": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint_rmse_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Checkpoint Rmse M"
+        },
+        "checks_crs": {
+          "title": "Checks Crs",
+          "type": "string"
+        },
+        "checks_file": {
+          "$ref": "#/$defs/FileRef"
+        },
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/AccuracyGroup"
+          },
+          "title": "Groups",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "residuals": {
+          "items": {
+            "$ref": "#/$defs/CheckResidual"
+          },
+          "title": "Residuals",
+          "type": "array"
+        },
+        "sampling": {
+          "title": "Sampling",
+          "type": "string"
+        },
+        "standard": {
+          "title": "Standard",
+          "type": "string"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "surface": {
+          "title": "Surface",
+          "type": "string"
+        },
+        "target_class_cm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Class Cm"
+        },
+        "transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransformOp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "standard",
+        "surface",
+        "sampling",
+        "checks_file",
+        "checks_crs",
+        "transform",
+        "checkpoint_rmse_m",
+        "groups",
+        "residuals",
+        "statement"
+      ],
+      "title": "AccuracyReport",
+      "type": "object"
+    },
+    "Bounds3D": {
+      "additionalProperties": false,
+      "properties": {
+        "maxx": {
+          "title": "Maxx",
+          "type": "number"
+        },
+        "maxy": {
+          "title": "Maxy",
+          "type": "number"
+        },
+        "maxz": {
+          "title": "Maxz",
+          "type": "number"
+        },
+        "minx": {
+          "title": "Minx",
+          "type": "number"
+        },
+        "miny": {
+          "title": "Miny",
+          "type": "number"
+        },
+        "minz": {
+          "title": "Minz",
+          "type": "number"
+        }
+      },
+      "required": [
+        "minx",
+        "miny",
+        "minz",
+        "maxx",
+        "maxy",
+        "maxz"
+      ],
+      "title": "Bounds3D",
+      "type": "object"
+    },
+    "ChangeBody": {
+      "additionalProperties": false,
+      "properties": {
+        "against": {
+          "title": "Against",
+          "type": "string"
+        },
+        "lod": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lod"
+        },
+        "lod_from_accuracy": {
+          "default": false,
+          "title": "Lod From Accuracy",
+          "type": "boolean"
+        },
+        "polygon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon"
+        },
+        "polygon_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon Srs"
+        },
+        "surface": {
+          "default": "dtm",
+          "title": "Surface",
+          "type": "string"
+        }
+      },
+      "required": [
+        "against"
+      ],
+      "title": "ChangeBody",
+      "type": "object"
+    },
+    "ChangeReport": {
+      "additionalProperties": false,
+      "properties": {
+        "against_job": {
+          "title": "Against Job",
+          "type": "string"
+        },
+        "against_sidecar_sha256": {
+          "title": "Against Sidecar Sha256",
+          "type": "string"
+        },
+        "area": {
+          "default": "whole overlap of the two epochs",
+          "title": "Area",
+          "type": "string"
+        },
+        "compared_area_m2": {
+          "title": "Compared Area M2",
+          "type": "number"
+        },
+        "gain_area_m2": {
+          "title": "Gain Area M2",
+          "type": "number"
+        },
+        "gain_m3": {
+          "title": "Gain M3",
+          "type": "number"
+        },
+        "lod_m": {
+          "title": "Lod M",
+          "type": "number"
+        },
+        "lod_rule": {
+          "title": "Lod Rule",
+          "type": "string"
+        },
+        "loss_area_m2": {
+          "title": "Loss Area M2",
+          "type": "number"
+        },
+        "loss_m3": {
+          "title": "Loss M3",
+          "type": "number"
+        },
+        "net_m3": {
+          "title": "Net M3",
+          "type": "number"
+        },
+        "no_change_area_m2": {
+          "title": "No Change Area M2",
+          "type": "number"
+        },
+        "res": {
+          "title": "Res",
+          "type": "number"
+        },
+        "surface": {
+          "title": "Surface",
+          "type": "string"
+        },
+        "this_sidecar_sha256": {
+          "title": "This Sidecar Sha256",
+          "type": "string"
+        },
+        "void_percent": {
+          "title": "Void Percent",
+          "type": "number"
+        }
+      },
+      "required": [
+        "against_job",
+        "against_sidecar_sha256",
+        "this_sidecar_sha256",
+        "surface",
+        "lod_m",
+        "lod_rule",
+        "gain_m3",
+        "loss_m3",
+        "net_m3",
+        "gain_area_m2",
+        "loss_area_m2",
+        "no_change_area_m2",
+        "compared_area_m2",
+        "void_percent",
+        "res"
+      ],
+      "title": "ChangeReport",
+      "type": "object"
+    },
+    "CheckResidual": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "excluded": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excluded"
+        },
+        "group": {
+          "enum": [
+            "NVA",
+            "VVA"
+          ],
+          "title": "Group",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "residual": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Residual"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "z_check": {
+          "title": "Z Check",
+          "type": "number"
+        },
+        "z_surface": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Z Surface"
+        }
+      },
+      "required": [
+        "id",
+        "x",
+        "y",
+        "z_check",
+        "z_surface",
+        "residual",
+        "group"
+      ],
+      "title": "CheckResidual",
+      "type": "object"
+    },
+    "ClassCount": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "integer"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "percent": {
+          "title": "Percent",
+          "type": "number"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "count",
+        "percent"
+      ],
+      "title": "ClassCount",
+      "type": "object"
+    },
+    "CloudSummary": {
+      "additionalProperties": false,
+      "description": "Header-level facts about a point cloud (``pdal info --summary``).",
+      "properties": {
+        "bounds": {
+          "$ref": "#/$defs/Bounds3D"
+        },
+        "copc": {
+          "default": false,
+          "title": "Copc",
+          "type": "boolean"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "dimensions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dimensions",
+          "type": "array"
+        },
+        "las_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Las Version"
+        },
+        "point_format": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point Format"
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale"
+        }
+      },
+      "required": [
+        "count",
+        "bounds"
+      ],
+      "title": "CloudSummary",
+      "type": "object"
+    },
+    "CommandEvent": {
+      "additionalProperties": false,
+      "description": "SSE ``command``: one tool invocation finished; ``index`` is its 1-based place in ``job.json`` ``commands``.",
+      "properties": {
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "returncode": {
+          "title": "Returncode",
+          "type": "integer"
+        },
+        "seconds": {
+          "title": "Seconds",
+          "type": "number"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "step",
+        "tool",
+        "seconds",
+        "returncode"
+      ],
+      "title": "CommandEvent",
+      "type": "object"
+    },
+    "CommandRecord": {
+      "additionalProperties": false,
+      "description": "One external command, as run. ``argv`` is exact; ``pipeline`` is the PDAL JSON fed on stdin.",
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Argv",
+          "type": "array"
+        },
+        "pipeline": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pipeline"
+        },
+        "returncode": {
+          "title": "Returncode",
+          "type": "integer"
+        },
+        "seconds": {
+          "title": "Seconds",
+          "type": "number"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "tool",
+        "argv",
+        "started_at",
+        "seconds",
+        "returncode"
+      ],
+      "title": "CommandRecord",
+      "type": "object"
+    },
+    "ContoursBody": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 5,
+          "title": "Index"
+        },
+        "interval": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "title": "Interval",
+          "type": "number"
+        }
+      },
+      "title": "ContoursBody",
+      "type": "object"
+    },
+    "ContoursReport": {
+      "additionalProperties": false,
+      "properties": {
+        "features": {
+          "title": "Features",
+          "type": "integer"
+        },
+        "index_every": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Index Every"
+        },
+        "interval": {
+          "title": "Interval",
+          "type": "number"
+        },
+        "max_elev": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Elev"
+        },
+        "min_elev": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Min Elev"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "interval",
+        "index_every",
+        "source",
+        "features",
+        "min_elev",
+        "max_elev"
+      ],
+      "title": "ContoursReport",
+      "type": "object"
+    },
+    "CrsRecord": {
+      "additionalProperties": false,
+      "description": "Everything a surveyor needs to know about the coordinates of a dataset (CLAUDE.md rule 1).",
+      "properties": {
+        "definition": {
+          "title": "Definition",
+          "type": "string"
+        },
+        "epoch": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Epoch"
+        },
+        "geoid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geoid"
+        },
+        "height_reference": {
+          "default": "none",
+          "enum": [
+            "gravity",
+            "ellipsoidal",
+            "none"
+          ],
+          "title": "Height Reference",
+          "type": "string"
+        },
+        "horizontal": {
+          "$ref": "#/$defs/CrsRef"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "default": "file",
+          "enum": [
+            "file",
+            "user",
+            "transformed"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "vertical": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CrsRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "vertical_assumed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vertical Assumed"
+        }
+      },
+      "required": [
+        "definition",
+        "name",
+        "horizontal"
+      ],
+      "title": "CrsRecord",
+      "type": "object"
+    },
+    "CrsRef": {
+      "additionalProperties": false,
+      "description": "One CRS (or one component of a compound CRS), as identified.",
+      "properties": {
+        "epsg": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Epsg"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "north_first": {
+          "default": false,
+          "title": "North First",
+          "type": "boolean"
+        },
+        "unit_factor": {
+          "default": 1.0,
+          "title": "Unit Factor",
+          "type": "number"
+        },
+        "units": {
+          "default": "metre",
+          "title": "Units",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "CrsRef",
+      "type": "object"
+    },
+    "CutfillBody": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_voids": {
+          "default": false,
+          "title": "Allow Voids",
+          "type": "boolean"
+        },
+        "design": {
+          "title": "Design",
+          "type": "string"
+        },
+        "design_vertical": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Design Vertical"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "polygon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon"
+        },
+        "polygon_geojson": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon Geojson"
+        },
+        "polygon_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon Srs"
+        },
+        "resample": {
+          "default": false,
+          "title": "Resample",
+          "type": "boolean"
+        },
+        "surface": {
+          "default": "dtm",
+          "title": "Surface",
+          "type": "string"
+        }
+      },
+      "required": [
+        "design"
+      ],
+      "title": "CutfillBody",
+      "type": "object"
+    },
+    "DensityStats": {
+      "additionalProperties": false,
+      "properties": {
+        "covered_cells": {
+          "title": "Covered Cells",
+          "type": "integer"
+        },
+        "mean": {
+          "title": "Mean",
+          "type": "number"
+        },
+        "p5": {
+          "title": "P5",
+          "type": "number"
+        },
+        "p50": {
+          "title": "P50",
+          "type": "number"
+        },
+        "p95": {
+          "title": "P95",
+          "type": "number"
+        },
+        "res": {
+          "title": "Res",
+          "type": "number"
+        }
+      },
+      "required": [
+        "res",
+        "mean",
+        "p5",
+        "p50",
+        "p95",
+        "covered_cells"
+      ],
+      "title": "DensityStats",
+      "type": "object"
+    },
+    "DimStats": {
+      "additionalProperties": false,
+      "properties": {
+        "average": {
+          "title": "Average",
+          "type": "number"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Counts",
+          "type": "object"
+        },
+        "maximum": {
+          "title": "Maximum",
+          "type": "number"
+        },
+        "minimum": {
+          "title": "Minimum",
+          "type": "number"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "stddev": {
+          "title": "Stddev",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "count",
+        "minimum",
+        "maximum",
+        "average",
+        "stddev"
+      ],
+      "title": "DimStats",
+      "type": "object"
+    },
+    "DoctorCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": "",
+          "title": "Detail",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "ok"
+      ],
+      "title": "DoctorCheck",
+      "type": "object"
+    },
+    "DoctorReport": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/DoctorCheck"
+          },
+          "title": "Checks",
+          "type": "array"
+        },
+        "versions": {
+          "$ref": "#/$defs/ToolVersions"
+        }
+      },
+      "required": [
+        "versions"
+      ],
+      "title": "DoctorReport",
+      "type": "object"
+    },
+    "DoneEvent": {
+      "additionalProperties": false,
+      "description": "SSE ``done``: the step's own report in ``result``; the job's product kinds and warnings after it.",
+      "properties": {
+        "job": {
+          "title": "Job",
+          "type": "string"
+        },
+        "products": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Products",
+          "type": "array"
+        },
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "job",
+        "step",
+        "result",
+        "products",
+        "warnings"
+      ],
+      "title": "DoneEvent",
+      "type": "object"
+    },
+    "EmptyBody": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "EmptyBody",
+      "type": "object"
+    },
+    "ErrorEvent": {
+      "additionalProperties": false,
+      "description": "SSE ``error``: a refusal or tool failure; ``stderr`` is the tool's stderr tail when a command failed.",
+      "properties": {
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "stderr": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stderr"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "ErrorEvent",
+      "type": "object"
+    },
+    "FileRef": {
+      "additionalProperties": false,
+      "description": "A file pinned by digest. ``path`` is relative to the job dir for products, absolute for inputs.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "size"
+      ],
+      "title": "FileRef",
+      "type": "object"
+    },
+    "GapStats": {
+      "additionalProperties": false,
+      "properties": {
+        "area_m2": {
+          "title": "Area M2",
+          "type": "number"
+        },
+        "cells": {
+          "title": "Cells",
+          "type": "integer"
+        },
+        "percent_of_coverage": {
+          "title": "Percent Of Coverage",
+          "type": "number"
+        },
+        "threshold": {
+          "title": "Threshold",
+          "type": "number"
+        },
+        "threshold_rule": {
+          "title": "Threshold Rule",
+          "type": "string"
+        }
+      },
+      "required": [
+        "threshold",
+        "threshold_rule",
+        "cells",
+        "area_m2",
+        "percent_of_coverage"
+      ],
+      "title": "GapStats",
+      "type": "object"
+    },
+    "GridSpec": {
+      "additionalProperties": false,
+      "description": "A raster grid snapped to multiples of its resolution, so two epochs at the same res share cells.\n\n``origin_x``/``origin_y`` are the lower-left corner (PDAL writers.gdal's convention); the\nGeoTIFF's top-left is ``(origin_x, origin_y + height * res)``.",
+      "properties": {
+        "height": {
+          "title": "Height",
+          "type": "integer"
+        },
+        "origin_x": {
+          "title": "Origin X",
+          "type": "number"
+        },
+        "origin_y": {
+          "title": "Origin Y",
+          "type": "number"
+        },
+        "res": {
+          "title": "Res",
+          "type": "number"
+        },
+        "width": {
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "origin_x",
+        "origin_y",
+        "res",
+        "width",
+        "height"
+      ],
+      "title": "GridSpec",
+      "type": "object"
+    },
+    "GroundBody": {
+      "additionalProperties": false,
+      "properties": {
+        "keep_classes": {
+          "default": false,
+          "title": "Keep Classes",
+          "type": "boolean"
+        },
+        "method": {
+          "default": "smrf",
+          "title": "Method",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "title": "GroundBody",
+      "type": "object"
+    },
+    "GroundReport": {
+      "additionalProperties": false,
+      "properties": {
+        "ground_density": {
+          "title": "Ground Density",
+          "type": "number"
+        },
+        "ground_percent": {
+          "title": "Ground Percent",
+          "type": "number"
+        },
+        "ground_points": {
+          "title": "Ground Points",
+          "type": "integer"
+        },
+        "ground_spacing": {
+          "title": "Ground Spacing",
+          "type": "number"
+        },
+        "method": {
+          "enum": [
+            "smrf",
+            "csf"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "noise_points": {
+          "title": "Noise Points",
+          "type": "integer"
+        },
+        "normalised_returns": {
+          "title": "Normalised Returns",
+          "type": "boolean"
+        },
+        "outlier_params": {
+          "additionalProperties": true,
+          "title": "Outlier Params",
+          "type": "object"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "points": {
+          "title": "Points",
+          "type": "integer"
+        },
+        "reset_classes": {
+          "title": "Reset Classes",
+          "type": "boolean"
+        },
+        "tile_buffer": {
+          "title": "Tile Buffer",
+          "type": "number"
+        },
+        "tile_size": {
+          "title": "Tile Size",
+          "type": "number"
+        },
+        "tiles": {
+          "title": "Tiles",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "method",
+        "params",
+        "outlier_params",
+        "points",
+        "ground_points",
+        "ground_percent",
+        "noise_points",
+        "ground_density",
+        "ground_spacing",
+        "reset_classes",
+        "normalised_returns",
+        "tiles",
+        "tile_size",
+        "tile_buffer"
+      ],
+      "title": "GroundReport",
+      "type": "object"
+    },
+    "HealthInfo": {
+      "additionalProperties": false,
+      "description": "``GET /health``. ``read_only`` is true unless ``SURVEY_ALLOW_PROCESS`` is set: clients disable writes on it.",
+      "properties": {
+        "read_only": {
+          "title": "Read Only",
+          "type": "boolean"
+        },
+        "service": {
+          "const": "argus-survey",
+          "default": "argus-survey",
+          "title": "Service",
+          "type": "string"
+        },
+        "status": {
+          "const": "ok",
+          "default": "ok",
+          "title": "Status",
+          "type": "string"
+        },
+        "tools": {
+          "$ref": "#/$defs/ToolVersions"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "read_only",
+        "tools"
+      ],
+      "title": "HealthInfo",
+      "type": "object"
+    },
+    "IngestBody": {
+      "additionalProperties": false,
+      "properties": {
+        "assume_vertical": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Assume Vertical"
+        },
+        "crop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop"
+        },
+        "crop_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop Srs"
+        },
+        "force": {
+          "default": false,
+          "title": "Force",
+          "type": "boolean"
+        },
+        "inputs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation"
+        },
+        "s_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "S Srs"
+        },
+        "t_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T Srs"
+        }
+      },
+      "required": [
+        "inputs"
+      ],
+      "title": "IngestBody",
+      "type": "object"
+    },
+    "IngestRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "crop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop"
+        },
+        "cropped": {
+          "default": false,
+          "title": "Cropped",
+          "type": "boolean"
+        },
+        "inputs_count": {
+          "title": "Inputs Count",
+          "type": "integer"
+        },
+        "output_count": {
+          "title": "Output Count",
+          "type": "integer"
+        },
+        "scale": {
+          "title": "Scale",
+          "type": "number"
+        },
+        "source_crs": {
+          "$ref": "#/$defs/CrsRecord"
+        },
+        "source_type": {
+          "default": "unknown",
+          "enum": [
+            "lidar",
+            "photogrammetry",
+            "unknown"
+          ],
+          "title": "Source Type",
+          "type": "string"
+        },
+        "stats": {
+          "items": {
+            "$ref": "#/$defs/DimStats"
+          },
+          "title": "Stats",
+          "type": "array"
+        },
+        "transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransformOp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "inputs_count",
+        "output_count",
+        "scale",
+        "source_crs"
+      ],
+      "title": "IngestRecord",
+      "type": "object"
+    },
+    "InputRecord": {
+      "additionalProperties": false,
+      "description": "An input file, pinned. ``path`` is absolute.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "role": {
+          "default": "points",
+          "title": "Role",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "title": "Size",
+          "type": "integer"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CloudSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "size"
+      ],
+      "title": "InputRecord",
+      "type": "object"
+    },
+    "JobDigest": {
+      "additionalProperties": false,
+      "description": "One row of ``GET /jobs``.",
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "crs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Crs"
+        },
+        "job_id": {
+          "title": "Job Id",
+          "type": "string"
+        },
+        "points": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Points"
+        },
+        "products": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Products",
+          "type": "array"
+        },
+        "steps_done": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps Done",
+          "type": "array"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "warnings": {
+          "title": "Warnings",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id",
+        "created_at",
+        "updated_at",
+        "crs",
+        "points",
+        "steps_done",
+        "products",
+        "warnings"
+      ],
+      "title": "JobDigest",
+      "type": "object"
+    },
+    "JobSidecar": {
+      "additionalProperties": false,
+      "description": "``job.json`` \u2014 the API contract and the provenance record of a job.",
+      "properties": {
+        "accuracy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccuracyReport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "change": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChangeReport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "commands": {
+          "items": {
+            "$ref": "#/$defs/CommandRecord"
+          },
+          "title": "Commands",
+          "type": "array"
+        },
+        "contours": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContoursReport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "crs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CrsRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ground": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GroundReport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ingest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IngestRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/InputRecord"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "job_id": {
+          "title": "Job Id",
+          "type": "string"
+        },
+        "package_version": {
+          "title": "Package Version",
+          "type": "string"
+        },
+        "products": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Product"
+          },
+          "title": "Products",
+          "type": "object"
+        },
+        "profiles": {
+          "items": {
+            "$ref": "#/$defs/ProfileReport"
+          },
+          "title": "Profiles",
+          "type": "array"
+        },
+        "qa": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QaReport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "steps_done": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps Done",
+          "type": "array"
+        },
+        "surfaces": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfacesReport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timings": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Timings",
+          "type": "object"
+        },
+        "tools": {
+          "$ref": "#/$defs/ToolVersions"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "volumes": {
+          "items": {
+            "$ref": "#/$defs/VolumeReport"
+          },
+          "title": "Volumes",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "job_id",
+        "package_version"
+      ],
+      "title": "JobSidecar",
+      "type": "object"
+    },
+    "OperationCandidate": {
+      "additionalProperties": false,
+      "description": "One candidate PROJ offered for a transformation, and why it was or wasn't used.",
+      "properties": {
+        "accuracy_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Accuracy M"
+        },
+        "grids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Grids",
+          "type": "array"
+        },
+        "missing_grids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Grids",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "accuracy_m"
+      ],
+      "title": "OperationCandidate",
+      "type": "object"
+    },
+    "OutlierStats": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "percent": {
+          "title": "Percent",
+          "type": "number"
+        }
+      },
+      "required": [
+        "method",
+        "params",
+        "count",
+        "percent"
+      ],
+      "title": "OutlierStats",
+      "type": "object"
+    },
+    "Product": {
+      "additionalProperties": false,
+      "description": "A job output. ``path`` is relative to the job dir.",
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "meta": {
+          "additionalProperties": true,
+          "title": "Meta",
+          "type": "object"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "title": "Size",
+          "type": "integer"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "size",
+        "kind",
+        "step"
+      ],
+      "title": "Product",
+      "type": "object"
+    },
+    "ProfileBody": {
+      "additionalProperties": false,
+      "properties": {
+        "line": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line"
+        },
+        "line_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line File"
+        },
+        "line_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line Srs"
+        },
+        "step": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "title": "Step",
+          "type": "number"
+        }
+      },
+      "title": "ProfileBody",
+      "type": "object"
+    },
+    "ProfileReport": {
+      "additionalProperties": false,
+      "properties": {
+        "length_m": {
+          "title": "Length M",
+          "type": "number"
+        },
+        "line": {
+          "title": "Line",
+          "type": "string"
+        },
+        "samples": {
+          "title": "Samples",
+          "type": "integer"
+        },
+        "step_m": {
+          "title": "Step M",
+          "type": "number"
+        },
+        "surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Surfaces",
+          "type": "array"
+        }
+      },
+      "required": [
+        "line",
+        "length_m",
+        "step_m",
+        "samples",
+        "surfaces"
+      ],
+      "title": "ProfileReport",
+      "type": "object"
+    },
+    "QaBody": {
+      "additionalProperties": false,
+      "properties": {
+        "density_res": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Density Res",
+          "type": "number"
+        },
+        "min_density": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Density"
+        }
+      },
+      "title": "QaBody",
+      "type": "object"
+    },
+    "QaReport": {
+      "additionalProperties": false,
+      "properties": {
+        "bounds": {
+          "$ref": "#/$defs/Bounds3D"
+        },
+        "classes": {
+          "items": {
+            "$ref": "#/$defs/ClassCount"
+          },
+          "title": "Classes",
+          "type": "array"
+        },
+        "coverage_area_m2": {
+          "title": "Coverage Area M2",
+          "type": "number"
+        },
+        "coverage_hex_edge": {
+          "title": "Coverage Hex Edge",
+          "type": "number"
+        },
+        "density": {
+          "$ref": "#/$defs/DensityStats"
+        },
+        "gaps": {
+          "$ref": "#/$defs/GapStats"
+        },
+        "outliers": {
+          "$ref": "#/$defs/OutlierStats"
+        },
+        "points": {
+          "title": "Points",
+          "type": "integer"
+        },
+        "returns": {
+          "items": {
+            "$ref": "#/$defs/ValueCount"
+          },
+          "title": "Returns",
+          "type": "array"
+        },
+        "source_type": {
+          "enum": [
+            "lidar",
+            "photogrammetry",
+            "unknown"
+          ],
+          "title": "Source Type",
+          "type": "string"
+        },
+        "tiles": {
+          "default": 1,
+          "title": "Tiles",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "points",
+        "bounds",
+        "coverage_area_m2",
+        "coverage_hex_edge",
+        "source_type",
+        "density",
+        "classes",
+        "returns",
+        "outliers",
+        "gaps"
+      ],
+      "title": "QaReport",
+      "type": "object"
+    },
+    "RasterStats": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum"
+        },
+        "mean": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum"
+        },
+        "stddev": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stddev"
+        },
+        "total_cells": {
+          "title": "Total Cells",
+          "type": "integer"
+        },
+        "valid_cells": {
+          "title": "Valid Cells",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "valid_cells",
+        "total_cells"
+      ],
+      "title": "RasterStats",
+      "type": "object"
+    },
+    "RunBody": {
+      "additionalProperties": false,
+      "properties": {
+        "assume_vertical": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Assume Vertical"
+        },
+        "crop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop"
+        },
+        "crop_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop Srs"
+        },
+        "fill_voids": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fill Voids"
+        },
+        "force": {
+          "default": false,
+          "title": "Force",
+          "type": "boolean"
+        },
+        "inputs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "interval": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "title": "Interval",
+          "type": "number"
+        },
+        "method": {
+          "default": "smrf",
+          "title": "Method",
+          "type": "string"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation"
+        },
+        "res": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "title": "Res",
+          "type": "number"
+        },
+        "s_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "S Srs"
+        },
+        "t_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T Srs"
+        }
+      },
+      "required": [
+        "inputs"
+      ],
+      "title": "RunBody",
+      "type": "object"
+    },
+    "StartEvent": {
+      "additionalProperties": false,
+      "description": "SSE ``start``: the step was accepted and is running.",
+      "properties": {
+        "job": {
+          "title": "Job",
+          "type": "string"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job",
+        "step"
+      ],
+      "title": "StartEvent",
+      "type": "object"
+    },
+    "StepEvent": {
+      "additionalProperties": false,
+      "description": "SSE ``step``: a (sub-)step started or finished (``run`` reports each of its steps).",
+      "properties": {
+        "seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seconds"
+        },
+        "state": {
+          "enum": [
+            "start",
+            "done"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "state"
+      ],
+      "title": "StepEvent",
+      "type": "object"
+    },
+    "SurfaceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "filled_max_distance": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Filled Max Distance"
+        },
+        "kind": {
+          "enum": [
+            "dtm",
+            "dsm",
+            "chm"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "output_type": {
+          "title": "Output Type",
+          "type": "string"
+        },
+        "points_used": {
+          "title": "Points Used",
+          "type": "string"
+        },
+        "radius": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Radius"
+        },
+        "stats": {
+          "$ref": "#/$defs/RasterStats"
+        },
+        "void_percent": {
+          "title": "Void Percent",
+          "type": "number"
+        },
+        "void_percent_after_fill": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Void Percent After Fill"
+        },
+        "window_size": {
+          "title": "Window Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "method",
+        "output_type",
+        "radius",
+        "window_size",
+        "points_used",
+        "void_percent",
+        "stats"
+      ],
+      "title": "SurfaceRecord",
+      "type": "object"
+    },
+    "SurfacesBody": {
+      "additionalProperties": false,
+      "properties": {
+        "chm": {
+          "default": true,
+          "title": "Chm",
+          "type": "boolean"
+        },
+        "dsm": {
+          "default": true,
+          "title": "Dsm",
+          "type": "boolean"
+        },
+        "dsm_method": {
+          "default": "idw",
+          "title": "Dsm Method",
+          "type": "string"
+        },
+        "dtm": {
+          "default": true,
+          "title": "Dtm",
+          "type": "boolean"
+        },
+        "fill_voids": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fill Voids"
+        },
+        "res": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "title": "Res",
+          "type": "number"
+        }
+      },
+      "title": "SurfacesBody",
+      "type": "object"
+    },
+    "SurfacesReport": {
+      "additionalProperties": false,
+      "properties": {
+        "grid": {
+          "$ref": "#/$defs/GridSpec"
+        },
+        "resolution_warning": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolution Warning"
+        },
+        "surfaces": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SurfaceRecord"
+          },
+          "title": "Surfaces",
+          "type": "object"
+        }
+      },
+      "required": [
+        "grid"
+      ],
+      "title": "SurfacesReport",
+      "type": "object"
+    },
+    "ToolVersions": {
+      "additionalProperties": false,
+      "description": "Versions of the external stack a job ran against (``doctor`` and every sidecar).",
+      "properties": {
+        "gdal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gdal"
+        },
+        "pdal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pdal"
+        },
+        "proj": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proj"
+        }
+      },
+      "title": "ToolVersions",
+      "type": "object"
+    },
+    "TransformOp": {
+      "additionalProperties": false,
+      "description": "The exact coordinate operation a job used (fed verbatim to PDAL's filters.projpipeline).",
+      "properties": {
+        "accuracy_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Accuracy M"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/OperationCandidate"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "chosen_by": {
+          "default": "proj-default",
+          "enum": [
+            "proj-default",
+            "user"
+          ],
+          "title": "Chosen By",
+          "type": "string"
+        },
+        "grids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Grids",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "proj": {
+          "title": "Proj",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "name",
+        "accuracy_m",
+        "proj"
+      ],
+      "title": "TransformOp",
+      "type": "object"
+    },
+    "ValueCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "percent": {
+          "title": "Percent",
+          "type": "number"
+        },
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value",
+        "count",
+        "percent"
+      ],
+      "title": "ValueCount",
+      "type": "object"
+    },
+    "VolumeBody": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_voids": {
+          "default": false,
+          "title": "Allow Voids",
+          "type": "boolean"
+        },
+        "base": {
+          "default": "plane",
+          "title": "Base",
+          "type": "string"
+        },
+        "base_vertical": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Vertical"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "polygon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon"
+        },
+        "polygon_geojson": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon Geojson"
+        },
+        "polygon_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon Srs"
+        },
+        "resample": {
+          "default": false,
+          "title": "Resample",
+          "type": "boolean"
+        },
+        "surface": {
+          "default": "dtm",
+          "title": "Surface",
+          "type": "string"
+        }
+      },
+      "title": "VolumeBody",
+      "type": "object"
+    },
+    "VolumeReport": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_voids": {
+          "default": false,
+          "title": "Allow Voids",
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "stockpile",
+            "cutfill",
+            "change"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "res": {
+          "title": "Res",
+          "type": "number"
+        },
+        "resampled": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resampled"
+        },
+        "sign_convention": {
+          "title": "Sign Convention",
+          "type": "string"
+        },
+        "surface": {
+          "title": "Surface",
+          "type": "string"
+        },
+        "surface_void_percent": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Surface Void Percent",
+          "type": "object"
+        },
+        "zones": {
+          "items": {
+            "$ref": "#/$defs/ZoneVolume"
+          },
+          "title": "Zones",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "surface",
+        "sign_convention",
+        "res",
+        "surface_void_percent",
+        "method",
+        "zones"
+      ],
+      "title": "VolumeReport",
+      "type": "object"
+    },
+    "WarningEvent": {
+      "additionalProperties": false,
+      "description": "SSE ``warning``: also appended to ``job.json`` ``warnings``.",
+      "properties": {
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "WarningEvent",
+      "type": "object"
+    },
+    "ZoneVolume": {
+      "additionalProperties": false,
+      "description": "Volumes between an upper and a lower surface over one polygon (all positive numbers).",
+      "properties": {
+        "above_m3": {
+          "title": "Above M3",
+          "type": "number"
+        },
+        "area_above_m2": {
+          "title": "Area Above M2",
+          "type": "number"
+        },
+        "area_below_m2": {
+          "title": "Area Below M2",
+          "type": "number"
+        },
+        "area_m2": {
+          "title": "Area M2",
+          "type": "number"
+        },
+        "base": {
+          "title": "Base",
+          "type": "string"
+        },
+        "base_fit_rms_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Fit Rms M"
+        },
+        "below_m3": {
+          "title": "Below M3",
+          "type": "number"
+        },
+        "boundary_samples": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Boundary Samples"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "net_m3": {
+          "title": "Net M3",
+          "type": "number"
+        },
+        "void_percent": {
+          "title": "Void Percent",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "area_m2",
+        "above_m3",
+        "below_m3",
+        "net_m3",
+        "area_above_m2",
+        "area_below_m2",
+        "void_percent",
+        "base"
+      ],
+      "title": "ZoneVolume",
+      "type": "object"
+    }
+  },
+  "title": "argus-survey wire contract"
+}
