@@ -24,6 +24,7 @@ filesystem path. A drawn profile line or volume polygon arrives as GeoJSON, not 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import threading
 from collections.abc import AsyncIterator, Callable
@@ -238,6 +239,21 @@ def create_app(
             kind, _, name = b.base.partition(":")
             return f"surface:{data_path(name, 'base surface')}" if kind == "surface" else b.base
 
+        def drawn_file(j: Job, stem: str, name: str, geom: dict[str, Any]) -> Path:
+            """A drawn WGS 84 geometry as a GeoJSON file in the job dir, named by its content so the argv recorded
+            in ``job.json`` keeps pointing at the exact geometry used (a later drawing never overwrites it)."""
+            text = json.dumps(
+                {
+                    "type": "FeatureCollection",
+                    "features": [{"type": "Feature", "properties": {"name": name}, "geometry": geom}],
+                },
+                sort_keys=True,
+            )
+            path = j.path(f".{stem}-{hashlib.sha256(text.encode()).hexdigest()[:16]}.geojson")
+            if not path.is_file():
+                path.write_text(text, encoding="utf-8")
+            return path
+
         def zone(j: Job, b: VolumeBody | CutfillBody, *, required: bool) -> tuple[Path | None, str | None]:
             """The polygon file and its CRS: a named file under the data root, or a drawn WGS 84 geometry."""
             if b.polygon is not None and b.polygon_geojson is not None:
@@ -245,14 +261,17 @@ def create_app(
             if b.polygon_geojson is None:
                 if required and b.polygon is None:
                     raise SurveyError("give polygon (a file under the data root) or polygon_geojson (drawn, WGS 84)")
+                if b.name is not None:
+                    raise SurveyError(
+                        "name applies to a drawn polygon (polygon_geojson); a file's zones keep their names"
+                    )
                 return opt_path(b.polygon, "polygon"), b.polygon_srs
+            if b.polygon_srs is not None:
+                raise SurveyError("polygon_geojson is always WGS 84 (EPSG:4326); polygon_srs applies to a polygon file")
             geom = b.polygon_geojson
             if geom.get("type") not in {"Polygon", "MultiPolygon"} or not geom.get("coordinates"):
                 raise SurveyError("polygon_geojson must be a GeoJSON Polygon or MultiPolygon geometry")
-            path = j.path(".drawn-polygon.geojson")
-            feature = {"type": "Feature", "properties": {"name": b.name or "drawn polygon"}, "geometry": geom}
-            path.write_text(json.dumps({"type": "FeatureCollection", "features": [feature]}))
-            return path, "EPSG:4326"
+            return drawn_file(j, "drawn-polygon", b.name or "drawn polygon", geom), "EPSG:4326"
 
         def volume_run(j: Job, b: VolumeBody) -> Any:
             poly, srs = zone(j, b, required=True)
@@ -286,15 +305,7 @@ def create_app(
             if b.line is not None:
                 if b.line.get("type") != "LineString" or len(b.line.get("coordinates") or []) < 2:
                     raise SurveyError("line must be a GeoJSON LineString with at least two positions")
-                path = j.path(".drawn-line.geojson")
-                path.write_text(
-                    json.dumps(
-                        {
-                            "type": "FeatureCollection",
-                            "features": [{"type": "Feature", "properties": {"name": "drawn line"}, "geometry": b.line}],
-                        }
-                    )
-                )
+                path = drawn_file(j, "drawn-line", "drawn line", b.line)
                 return profile(j, path, step=b.step, line_srs="EPSG:4326")
             return profile(j, data_path(b.line_file, "line_file"), step=b.step, line_srs=b.line_srs)  # type: ignore[arg-type]
 

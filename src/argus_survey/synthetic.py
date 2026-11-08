@@ -367,12 +367,15 @@ def write_kit(out: Path, *, srs: str = "EPSG:7850+5711", sink: CommandSink | Non
         "change_gain_m3": round(later.cone_volume - scene.cone_volume, 3),
         "pad_area_m2": pad_area,
         "pad_design_level_m": level,
+        "design_res_m": res,
         "pad_net_cut_m3": round(0.25 * pad_area, 3),
         "notes": [
             "stockpile: a cone on a tilted plane; measure it on the DSM (ground filtering removes a pile from the DTM) "
             "with a plane base",
             "change: on the DSM, the gain before any level of detection; LoD trims the cone's shallow flanks",
             "pad: cut minus fill (design below ground) is exactly 0.25 m times the pad area",
+            f"design.tif is on a {res} m grid: build the surfaces at --res {res}, or cut/fill refuses the misaligned "
+            "design unless --resample is given",
             "checks: on the true ground; NVA RMSE ≈ the 0.02 m point noise, VVA reads the DTM under canopy",
         ],
     }

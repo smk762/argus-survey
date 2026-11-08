@@ -502,11 +502,7 @@ class ProfileReport(_Model):
 # ── API request bodies (inputs are names under SURVEY_DATA_DIR) ────────────────
 
 
-class _Body(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class IngestBody(_Body):
+class IngestBody(_Model):
     inputs: list[str] = Field(min_length=1)
     t_srs: str | None = None
     s_srs: str | None = None
@@ -517,18 +513,18 @@ class IngestBody(_Body):
     force: bool = False
 
 
-class QaBody(_Body):
+class QaBody(_Model):
     density_res: float = Field(default=1.0, gt=0)
     min_density: float | None = Field(default=None, ge=0)
 
 
-class GroundBody(_Body):
+class GroundBody(_Model):
     method: str = "smrf"
     params: dict[str, float | int | bool] = Field(default_factory=dict)
     keep_classes: bool = False
 
 
-class SurfacesBody(_Body):
+class SurfacesBody(_Model):
     res: float = Field(default=0.5, gt=0)
     dtm: bool = True
     dsm: bool = True
@@ -537,12 +533,12 @@ class SurfacesBody(_Body):
     dsm_method: str = "idw"
 
 
-class ContoursBody(_Body):
+class ContoursBody(_Model):
     interval: float = Field(default=0.5, gt=0)
     index: int | None = 5
 
 
-class VolumeBody(_Body):
+class VolumeBody(_Model):
     polygon: str | None = None  # a polygon file under the data root
     polygon_geojson: dict[str, Any] | None = None  # or a GeoJSON (Multi)Polygon geometry in WGS 84, drawn on the map
     name: str | None = None  # zone name for a drawn polygon
@@ -554,7 +550,7 @@ class VolumeBody(_Body):
     base_vertical: str | None = None
 
 
-class CutfillBody(_Body):
+class CutfillBody(_Model):
     design: str
     polygon: str | None = None
     polygon_geojson: dict[str, Any] | None = None  # a drawn GeoJSON (Multi)Polygon in WGS 84, instead of polygon
@@ -566,7 +562,7 @@ class CutfillBody(_Body):
     allow_voids: bool = False
 
 
-class ChangeBody(_Body):
+class ChangeBody(_Model):
     against: str
     lod: float | None = Field(default=None, ge=0)
     lod_from_accuracy: bool = False
@@ -575,7 +571,7 @@ class ChangeBody(_Body):
     polygon_srs: str | None = None
 
 
-class AccuracyBody(_Body):
+class AccuracyBody(_Model):
     checks: str
     crs: str
     cols: list[str] = Field(default_factory=lambda: ["id", "x", "y", "z"], min_length=4, max_length=4)
@@ -584,7 +580,7 @@ class AccuracyBody(_Body):
     surface: str = "dtm"
 
 
-class ProfileBody(_Body):
+class ProfileBody(_Model):
     line: dict[str, Any] | None = None  # a GeoJSON LineString geometry in WGS 84 (lon, lat), e.g. drawn on the map
     line_file: str | None = None  # or a line file under the data root
     line_srs: str | None = None
@@ -598,7 +594,7 @@ class RunBody(IngestBody):
     fill_voids: int | None = Field(default=None, ge=1)
 
 
-class EmptyBody(_Body):
+class EmptyBody(_Model):
     pass
 
 

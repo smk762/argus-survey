@@ -85,6 +85,13 @@ def test_volume_refuses_a_file_and_a_drawn_polygon_together(roots) -> None:  # t
     assert events[-1][0] == "error" and "not both" in events[-1][1]["message"]
     events = sse(client(roots, True).post("/jobs/j1/volume", json={}).text)
     assert events[-1][0] == "error" and "polygon_geojson" in events[-1][1]["message"]
+    drawn = {"type": "Polygon", "coordinates": [ring]}
+    events = sse(
+        client(roots, True).post("/jobs/j1/volume", json={"polygon_geojson": drawn, "polygon_srs": "EPSG:7850"}).text
+    )
+    assert events[-1][0] == "error" and "always WGS 84" in events[-1][1]["message"]
+    events = sse(client(roots, True).post("/jobs/j1/volume", json={"polygon": "pile.geojson", "name": "A"}).text)
+    assert events[-1][0] == "error" and "drawn polygon" in events[-1][1]["message"]
 
 
 def test_viewer_is_served(roots) -> None:  # type: ignore[no-untyped-def]

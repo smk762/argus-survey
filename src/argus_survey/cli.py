@@ -239,6 +239,10 @@ def synth(
     from argus_survey import synthetic
 
     if kit:
+        if epoch != 1 or photogrammetry or checks is not None:
+            raise fail(
+                SurveyError("--kit writes both epochs and checks.csv itself; drop --epoch/--photogrammetry/--checks")
+            )
         try:
             truth = synthetic.write_kit(out, srs=srs)
         except (SurveyError, ValueError) as exc:

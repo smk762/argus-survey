@@ -57,7 +57,8 @@ def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
         ramp_name = "hillshade"
         if kind != "hillshade":
             s = rasters.stats(src, sink=None, step="web")
-            lo, hi = (s.minimum or 0.0), (s.maximum or 1.0)
+            lo = 0.0 if s.minimum is None else s.minimum
+            hi = 1.0 if s.maximum is None else s.maximum
             if kind.startswith("dod"):
                 m = max(abs(lo), abs(hi), 0.1)
                 # transparent at 0 so "no change" shows the map beneath; opaque at the ends
