@@ -1655,6 +1655,7 @@
           "enum": [
             "lidar",
             "photogrammetry",
+            "terrestrial",
             "unknown"
           ],
           "title": "Source Type",
@@ -2257,6 +2258,7 @@
           "enum": [
             "lidar",
             "photogrammetry",
+            "terrestrial",
             "unknown"
           ],
           "title": "Source Type",

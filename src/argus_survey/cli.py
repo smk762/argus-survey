@@ -140,7 +140,7 @@ def _print_crs(record: CrsRecord | None, title: str = "CRS") -> None:
 
 @app.command()
 def info(
-    path: Annotated[Path, typer.Argument(help="LAS/LAZ/COPC file", exists=True, dir_okay=False)],
+    path: Annotated[Path, typer.Argument(help="LAS/LAZ/COPC/E57 file", exists=True, dir_okay=False)],
     as_json: Annotated[bool, typer.Option("--json", help="Print JSON")] = False,
 ) -> None:
     """Header summary and CRS record of a point cloud (no job is created)."""
@@ -168,7 +168,7 @@ def info(
 
 @app.command()
 def ingest(
-    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ files or directories of them")],
+    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ/COPC/E57 files or directories of them")],
     job: JobOpt = None,
     out: OutOpt = None,
     t_srs: Annotated[
@@ -415,7 +415,7 @@ def contours(
 
 @app.command()
 def run(
-    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ files or directories")],
+    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ/COPC/E57 files or directories")],
     job: JobOpt = None,
     out: OutOpt = None,
     res: Annotated[float, typer.Option("--res", help="Surface cell size (m)")] = 0.5,

@@ -161,3 +161,37 @@ def test_directory_of_tiles(scene: synthetic.Scene, tmp_path: Path, jobs_root: P
     rec = ingest(job, [tiles])
     assert len(job.sidecar.inputs) == 2
     assert rec.output_count == summarize(a)[0].count + summarize(b)[0].count
+
+
+def test_e57_ingest_needs_s_srs_and_keeps_coordinates(
+    scene: synthetic.Scene, synth_dir: Path, jobs_root: Path, las_mga_ahd: Path
+) -> None:
+    from argus_survey.ground import ground
+
+    e57 = synthetic.write_scene(scene, synth_dir / "scan.e57")
+    store = JobStore(jobs_root)
+    with pytest.raises(SurveyError, match="no CRS"):
+        ingest(store.open("e57-nocrs", create=True), [e57])
+
+    job = store.open("e57", create=True)
+    rec = ingest(job, [e57], s_srs="EPSG:7850+5711")
+    ref, _ = summarize(las_mga_ahd)
+    out, _ = summarize(job.product_path("copc"))
+    assert rec.output_count == ref.count
+    assert job.sidecar.inputs[0].summary.copc is False
+    # double precision through E57 and mm scale into the COPC: the bounds agree with the LAS to the mm
+    for k in ("minx", "miny", "minz", "maxx", "maxy", "maxz"):
+        assert getattr(out.bounds, k) == pytest.approx(getattr(ref.bounds, k), abs=0.0015), k
+    assert rec.source_type == "terrestrial"
+    assert any("E57 declares no CRS" in w for w in job.sidecar.warnings)
+    assert any(c.pipeline and c.pipeline[0]["type"] == "readers.e57" for c in job.sidecar.commands)
+    # no return numbering in E57: the parts carry 1-of-1, which SMRF's return filter accepts
+    g = ground(job)
+    assert g.ground_percent > 50 and not g.normalised_returns
+
+
+def test_unsupported_input_suffix(tmp_path: Path, jobs_root: Path) -> None:
+    f = tmp_path / "scan.ply"
+    f.write_text("ply\n")
+    with pytest.raises(SurveyError, match="unsupported input format"):
+        ingest(JobStore(jobs_root).open("ply", create=True), [f])

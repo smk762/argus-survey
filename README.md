@@ -2,7 +2,7 @@
 
 **Point-cloud deliverables for land surveyors — with every datum, transformation and command on the record.**
 
-Give it LiDAR or drone photogrammetry (LAS/LAZ/COPC) and it produces what a surveyor hands over: a QA report,
+Give it LiDAR, drone photogrammetry (LAS/LAZ/COPC) or terrestrial scans (E57) and it produces what a surveyor hands over: a QA report,
 ground classification, DTM/DSM/CHM, contours, stockpile volumes, cut/fill against a design, long sections,
 change between epochs and a vertical accuracy statement against check points (ASPRS Edition 2). Each job
 ends in a printable `report.html` and a `job.json` that records the inputs' SHA256s, the CRS, the exact PROJ

@@ -160,7 +160,7 @@ class Bounds3D(_Model):
         return max(self.maxx - self.minx, 0.0) * max(self.maxy - self.miny, 0.0)
 
 
-SourceType = Literal["lidar", "photogrammetry", "unknown"]
+SourceType = Literal["lidar", "photogrammetry", "terrestrial", "unknown"]  # terrestrial: E57 scanner data
 
 
 class CloudSummary(_Model):
