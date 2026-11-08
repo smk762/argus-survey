@@ -91,3 +91,39 @@ def test_tiled_ground_partition_is_exact(las_mga_ahd: Path, jobs_root: Path, mon
     assert r.tiles > 4
     bld = class_counts_by_truth(job.product_path("classified"), synthetic.TRUTH_BUILDING, min_height=0.6)
     assert bld.get("2", 0) / sum(bld.values()) < 0.05
+
+
+def test_stockpile_preset_keeps_a_steep_pile(synth_dir: Path, jobs_root: Path) -> None:
+    """A 39° cone (angle of repose): default SMRF cuts its crest off, the stockpile preset keeps it."""
+    from argus_survey.ingest import ingest
+    from argus_survey.jobs import JobStore
+
+    steep = synthetic.Scene(cone_height=6.5)  # radius 8 m → slope 0.81
+    las = synthetic.write_scene(steep, synth_dir / "steep.laz", srs="EPSG:7850+5711")
+    job = JobStore(jobs_root).open("steep", create=True)
+    ingest(job, [las])
+
+    def ground_fraction(truth: int, min_height: float | None = None) -> float:
+        counts = class_counts_by_truth(job.product_path("classified"), truth, min_height=min_height)
+        return counts.get("2", 0) / sum(counts.values())
+
+    ground(job)
+    assert ground_fraction(synthetic.TRUTH_STOCKPILE) < 0.85  # the default loses the crest
+
+    r = ground(job, preset="stockpile")
+    assert r.preset == "stockpile" and r.params["slope"] == 1.0
+    assert ground_fraction(synthetic.TRUTH_STOCKPILE) > 0.99
+    # walls and canopy are still not ground
+    assert ground_fraction(synthetic.TRUTH_BUILDING, 0.6) < 0.05
+    assert ground_fraction(synthetic.TRUTH_VEGETATION, 0.6) < 0.05
+    # an explicit parameter still wins over the preset
+    assert ground(job, preset="stockpile", params={"slope": 0.8}).params["slope"] == 0.8
+
+
+def test_preset_refusals(ingested) -> None:  # type: ignore[no-untyped-def]
+    from argus_survey.models import SurveyError
+
+    with pytest.raises(SurveyError, match="unknown ground preset"):
+        ground(ingested, preset="quarry")
+    with pytest.raises(SurveyError, match="smrf only"):
+        ground(ingested, method="csf", preset="stockpile")

@@ -328,13 +328,20 @@ def create_app(
             "qa": (QaBody, lambda j, b: qa(j, density_res=b.density_res, min_density=b.min_density), False),
             "ground": (
                 GroundBody,
-                lambda j, b: ground(j, method=b.method, params=b.params, keep_classes=b.keep_classes),
+                lambda j, b: ground(j, method=b.method, params=b.params, preset=b.preset, keep_classes=b.keep_classes),
                 False,
             ),
             "surfaces": (
                 SurfacesBody,
                 lambda j, b: surfaces(
-                    j, res=b.res, dtm=b.dtm, dsm=b.dsm, chm=b.chm, fill_voids=b.fill_voids, dsm_method=b.dsm_method
+                    j,
+                    res=b.res,
+                    dtm=b.dtm,
+                    dsm=b.dsm,
+                    chm=b.chm,
+                    fill_voids=b.fill_voids,
+                    dsm_method=b.dsm_method,
+                    chm_method=b.chm_method,
                 ),
                 False,
             ),
@@ -383,6 +390,7 @@ def create_app(
                     crop=opt_path(b.crop, "crop"),
                     crop_srs=b.crop_srs,
                     method=b.method,
+                    preset=b.preset,
                     fill_voids=b.fill_voids,
                     echo=lambda _m: None,
                 ),

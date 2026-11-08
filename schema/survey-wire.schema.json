@@ -1370,6 +1370,18 @@
           },
           "title": "Params",
           "type": "object"
+        },
+        "preset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset"
         }
       },
       "title": "GroundBody",
@@ -1423,6 +1435,18 @@
         "points": {
           "title": "Points",
           "type": "integer"
+        },
+        "preset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset"
         },
         "reset_classes": {
           "title": "Reset Classes",
@@ -2482,6 +2506,18 @@
           "default": null,
           "title": "Operation"
         },
+        "preset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset"
+        },
         "res": {
           "default": 0.5,
           "exclusiveMinimum": 0,
@@ -2666,6 +2702,11 @@
           "default": true,
           "title": "Chm",
           "type": "boolean"
+        },
+        "chm_method": {
+          "default": "max",
+          "title": "Chm Method",
+          "type": "string"
         },
         "dsm": {
           "default": true,

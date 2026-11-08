@@ -355,6 +355,7 @@ class QaReport(_Model):
 
 class GroundReport(_Model):
     method: Literal["smrf", "csf"]
+    preset: str | None = None  # named parameter set (e.g. "stockpile"), already merged into params
     params: dict[str, Any]
     outlier_params: dict[str, Any]
     points: int
@@ -520,6 +521,7 @@ class QaBody(_Model):
 
 class GroundBody(_Model):
     method: str = "smrf"
+    preset: str | None = None  # e.g. "stockpile" (SMRF slope 1.0); params override it
     params: dict[str, float | int | bool] = Field(default_factory=dict)
     keep_classes: bool = False
 
@@ -531,6 +533,7 @@ class SurfacesBody(_Model):
     chm: bool = True
     fill_voids: int | None = Field(default=None, ge=1)
     dsm_method: str = "idw"
+    chm_method: str = "max"  # max (binned) or radius (highest point within res·√2; fewer voids, wider crowns)
 
 
 class ContoursBody(_Model):
@@ -591,6 +594,7 @@ class RunBody(IngestBody):
     res: float = Field(default=0.5, gt=0)
     interval: float = Field(default=0.5, gt=0)
     method: str = "smrf"
+    preset: str | None = None
     fill_voids: int | None = Field(default=None, ge=1)
 
 

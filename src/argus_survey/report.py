@@ -315,7 +315,10 @@ def section_ground(job: Job) -> str:
             "<h2>Ground classification</h2>",
             kv(
                 [
-                    ("Method", e(f"{g.method.upper()}: {params(g.params)}")),
+                    (
+                        "Method",
+                        e(f"{g.method.upper()}{f' (preset {g.preset})' if g.preset else ''}: {params(g.params)}"),
+                    ),
                     (
                         "Outliers first",
                         e(f"filters.outlier ({params(g.outlier_params)}) → class 7, ignored by the ground filter"),
