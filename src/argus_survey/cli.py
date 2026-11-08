@@ -216,6 +216,12 @@ def ingest(
             f"transformation: {t.name} ({t.accuracy_m} m)" + (f" · grids {', '.join(t.grids)}" if t.grids else "")
         )
     console.print(f"source type: {record.source_type}")
+    sf = record.scale_factors
+    if sf is not None:
+        console.print(
+            f"grid to ground: k {sf.point_scale:.8f}"
+            + (f" × height factor {sf.height_factor:.8f} = combined {sf.combined:.8f}" if sf.combined else "")
+        )
     _print_crs(j.sidecar.crs, "Job CRS")
     for w in j.sidecar.warnings:
         console.print(f"[yellow]warning:[/] {w}")
@@ -476,6 +482,12 @@ def _print_volumes(r: VolumeReport) -> None:
             f"{z.void_percent:.2f}",
         )
     console.print(table)
+    if r.combined_scale_factor is not None:
+        console.print(
+            f"[dim]at ground (grid ÷ {r.combined_scale_factor:.8f}²): "
+            + "; ".join(f"{z.name} area {z.ground_area_m2:,.2f} m², net {z.ground_net_m3:,.2f} m³" for z in r.zones)
+            + "[/]"
+        )
     console.print(f"[dim]{r.sign_convention}[/]")
     for z in r.zones:
         console.print(

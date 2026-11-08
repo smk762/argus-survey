@@ -206,6 +206,32 @@ def section_crs(job: Job) -> str:
     if c.epoch is not None:
         rows.append(("Coordinate epoch", e(c.epoch)))
     out = ["<h2>Coordinate reference</h2>", kv(rows)]
+    sf = s.ingest.scale_factors if s.ingest else None
+    if sf is not None:
+        srows = [
+            (
+                "Point scale factor k",
+                e(
+                    f"{sf.point_scale:.8f} at the centroid ({sf.point_scale_min:.8f} – {sf.point_scale_max:.8f} over "
+                    f"the extent's corners)"
+                ),
+            ),
+            ("Grid convergence", e(f"{sf.convergence_deg:+.6f}°")),
+        ]
+        if sf.height_factor is not None:
+            h = f"{sf.ellipsoidal_height_m:.3f} m ellipsoidal"
+            if sf.geoid_separation_m is not None:
+                h += f" (mean height {sf.height_m:.3f} m + geoid separation {sf.geoid_separation_m:.3f} m)"
+            srows.append(("Height factor R/(R+h)", e(f"{sf.height_factor:.8f}, h = {h}, R = {sf.radius_m:,.1f} m")))
+            srows.append(("Combined scale factor", f"<strong>{e(f'{sf.combined:.8f}')}</strong>"))
+        else:
+            srows.append(("Combined scale factor", "not known (no vertical datum, so no height factor)"))
+        out.append(
+            "<h3>Grid to ground</h3>"
+            + kv(srows)
+            + f'<p class="note">{e(sf.method)}. Areas and volumes in this report are grid values unless marked '
+            "ground.</p>"
+        )
     if s.ingest:
         src = s.ingest.source_crs
         out.append(f"<h3>Source data</h3>{kv([('Source CRS', e(src.name)), ('Given by', e(src.source))])}")
@@ -402,6 +428,21 @@ def _volume_table(v: VolumeReport) -> str:
         for z in v.zones
     ]
     t = table(["Zone", "Area m²", f"{a} m³", f"{b} m³", "Net m³", "Voids %"], rows, {1, 2, 3, 4, 5})
+    if v.combined_scale_factor is not None:
+        grows = [
+            [
+                e(z.name),
+                e(f"{z.ground_area_m2:,.2f}"),
+                e(f"{z.ground_above_m3:,.2f}"),
+                e(f"{z.ground_below_m3:,.2f}"),
+                e(f"{z.ground_net_m3:,.2f}"),
+            ]
+            for z in v.zones
+            if z.ground_area_m2 is not None
+        ]
+        t += f'<p class="note">At ground (grid ÷ {v.combined_scale_factor:.8f}²):</p>' + table(
+            ["Zone", "Ground area m²", f"{a} m³", f"{b} m³", "Net m³"], grows, {1, 2, 3, 4}
+        )
     bases = "".join(
         f"<li><strong>{e(z.name)}</strong>: {e(z.base)}"
         + (

@@ -143,6 +143,10 @@ Run any of them with `--help`. All of them take `--job ID` (under `SURVEY_JOBS_D
 Areas and volumes are in the projection's **grid** units. MGA's line scale runs from 0.9996 on the central
 meridian to about 1.0006 at a zone edge at WA latitudes, so grid areas and volumes can differ from ground by
 up to ~0.1 %; the WA LSG2020 grids (PCG2020 etc.) exist to keep that negligible for engineering work.
+Ingest records the **combined scale factor** at the site (point scale k from `proj -V`, with its range over
+the extent, × the height factor R/(R+h) from the ellipsoidal height, reached through the same explicit
+geoid operation), and volume/cut-fill reports give ground-scaled areas and volumes (grid ÷ combined²)
+alongside the grid values.
 
 ## API and viewer
 

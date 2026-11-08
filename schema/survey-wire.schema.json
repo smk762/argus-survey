@@ -1690,6 +1690,17 @@
           "title": "Scale",
           "type": "number"
         },
+        "scale_factors": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScaleFactors"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "source_crs": {
           "$ref": "#/$defs/CrsRecord"
         },
@@ -2600,6 +2611,131 @@
       "title": "RunBody",
       "type": "object"
     },
+    "ScaleFactors": {
+      "additionalProperties": false,
+      "description": "Grid-to-ground at the site centroid: ground distance = grid distance / combined (see ``scale.py``).",
+      "properties": {
+        "combined": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Combined"
+        },
+        "convergence_deg": {
+          "title": "Convergence Deg",
+          "type": "number"
+        },
+        "easting": {
+          "title": "Easting",
+          "type": "number"
+        },
+        "ellipsoidal_height_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ellipsoidal Height M"
+        },
+        "geoid_separation_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Geoid Separation M"
+        },
+        "height_factor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Height Factor"
+        },
+        "height_m": {
+          "title": "Height M",
+          "type": "number"
+        },
+        "latitude": {
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "title": "Longitude",
+          "type": "number"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "northing": {
+          "title": "Northing",
+          "type": "number"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation"
+        },
+        "point_scale": {
+          "title": "Point Scale",
+          "type": "number"
+        },
+        "point_scale_max": {
+          "title": "Point Scale Max",
+          "type": "number"
+        },
+        "point_scale_min": {
+          "title": "Point Scale Min",
+          "type": "number"
+        },
+        "radius_m": {
+          "title": "Radius M",
+          "type": "number"
+        }
+      },
+      "required": [
+        "easting",
+        "northing",
+        "longitude",
+        "latitude",
+        "height_m",
+        "ellipsoidal_height_m",
+        "geoid_separation_m",
+        "point_scale",
+        "point_scale_min",
+        "point_scale_max",
+        "convergence_deg",
+        "radius_m",
+        "height_factor",
+        "combined",
+        "method"
+      ],
+      "title": "ScaleFactors",
+      "type": "object"
+    },
     "StartEvent": {
       "additionalProperties": false,
       "description": "SSE ``start``: the step was accepted and is running.",
@@ -3052,6 +3188,18 @@
           "title": "Allow Voids",
           "type": "boolean"
         },
+        "combined_scale_factor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Combined Scale Factor"
+        },
         "kind": {
           "enum": [
             "stockpile",
@@ -3182,6 +3330,54 @@
           ],
           "default": null,
           "title": "Boundary Samples"
+        },
+        "ground_above_m3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ground Above M3"
+        },
+        "ground_area_m2": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ground Area M2"
+        },
+        "ground_below_m3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ground Below M3"
+        },
+        "ground_net_m3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ground Net M3"
         },
         "name": {
           "title": "Name",

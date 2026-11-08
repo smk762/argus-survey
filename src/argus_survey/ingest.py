@@ -414,6 +414,13 @@ def ingest(
             source_type=source_type,
             stats=stats,
         )
+        z = next((st for st in stats if st.name == "Z"), None)
+        try:
+            from argus_survey.scale import scale_factors
+
+            record.scale_factors = scale_factors(target, out_summary.bounds, z.average if z else 0.0, sink=sink)
+        except SurveyError as exc:
+            job.warn(f"Grid-to-ground scale factor not computed: {exc}")
         job.sidecar.crs = target
         job.sidecar.ingest = record
         job.add_product(

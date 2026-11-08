@@ -79,6 +79,11 @@ def test_stockpile_volume_from_points(epochs, tmp_path) -> None:  # type: ignore
     assert z.above_m3 == pytest.approx(s1.cone_volume, rel=0.03), z
     assert z.base_fit_rms_m < 0.05
     assert json.loads(j1.product_path("volume").read_text())["zones"][0]["name"] == "ROM pad 1"
+    # grid → ground: MGA zone 50 west of the central meridian shrinks grid lengths (k < 1), so ground is larger
+    c = r.combined_scale_factor
+    assert c is not None and c == j1.sidecar.ingest.scale_factors.combined and c < 1
+    assert z.ground_above_m3 == pytest.approx(z.above_m3 / c**2, abs=2e-3) and z.ground_above_m3 > z.above_m3
+    assert z.ground_area_m2 == pytest.approx(z.area_m2 / c**2, abs=2e-3)
 
 
 def test_change_matches_injected_growth(epochs, tmp_path) -> None:  # type: ignore[no-untyped-def]

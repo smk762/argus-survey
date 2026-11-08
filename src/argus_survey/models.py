@@ -201,6 +201,27 @@ class Product(FileRef):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
+class ScaleFactors(_Model):
+    """Grid-to-ground at the site centroid: ground distance = grid distance / combined (see ``scale.py``)."""
+
+    easting: float
+    northing: float
+    longitude: float
+    latitude: float
+    height_m: float  # mean point height, on the job's vertical datum
+    ellipsoidal_height_m: float | None  # None without a vertical datum
+    geoid_separation_m: float | None  # ellipsoidal − job height (N), when the job is on a gravity datum
+    point_scale: float  # projection scale factor k at the centroid
+    point_scale_min: float  # k over the extent's corners
+    point_scale_max: float
+    convergence_deg: float  # grid convergence at the centroid
+    radius_m: float  # Gaussian mean radius of the ellipsoid at the centroid
+    height_factor: float | None  # R / (R + h)
+    combined: float | None  # k × height factor
+    operation: str | None = None  # PROJ operation used to reach the ellipsoidal height
+    method: str
+
+
 class IngestRecord(_Model):
     inputs_count: int
     output_count: int
@@ -211,6 +232,7 @@ class IngestRecord(_Model):
     transform: TransformOp | None = None
     source_type: SourceType = "unknown"
     stats: list[DimStats] = Field(default_factory=list)
+    scale_factors: ScaleFactors | None = None  # grid-to-ground at the site
 
 
 class JobSidecar(_Model):
@@ -417,6 +439,11 @@ class ZoneVolume(_Model):
     area_below_m2: float
     void_percent: float  # of the polygon's area with no value in either surface
     base: str  # description of the lower surface
+    # the same quantities at ground (grid / combined scale factor², see ScaleFactors), when known
+    ground_area_m2: float | None = None
+    ground_above_m3: float | None = None
+    ground_below_m3: float | None = None
+    ground_net_m3: float | None = None
     base_fit_rms_m: float | None = None  # plane bases: RMS of boundary heights about the fitted plane
     boundary_samples: int | None = None
 
@@ -431,6 +458,7 @@ class VolumeReport(_Model):
     zones: list[ZoneVolume]
     resampled: str | None = None  # if an input was resampled onto the grid, how
     allow_voids: bool = False
+    combined_scale_factor: float | None = None  # grid-to-ground factor used for the zones' ground_* figures
 
 
 class ChangeReport(_Model):
