@@ -62,6 +62,13 @@
     "AccuracyGroup": {
       "additionalProperties": false,
       "properties": {
+        "blunders": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blunders",
+          "type": "array"
+        },
         "excluded": {
           "title": "Excluded",
           "type": "integer"
@@ -85,6 +92,18 @@
           ],
           "title": "Max Abs M"
         },
+        "max_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max M"
+        },
         "mean_m": {
           "anyOf": [
             {
@@ -96,9 +115,33 @@
           ],
           "title": "Mean M"
         },
+        "median_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median M"
+        },
         "meets_minimum_count": {
           "title": "Meets Minimum Count",
           "type": "boolean"
+        },
+        "min_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min M"
         },
         "n": {
           "title": "N",

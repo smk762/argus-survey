@@ -7,7 +7,7 @@ import random
 
 import pytest
 
-from argus_survey.accuracy import group_of, group_stats
+from argus_survey.accuracy import group_of, group_stats, statement_for
 from argus_survey.models import CheckResidual, GridSpec, SurveyError
 from argus_survey.profile import nice_ticks, svg
 from argus_survey.vectors import densify, wkt_bbox, wkt_rings
@@ -83,3 +83,37 @@ def test_group_stats_with_checkpoint_accuracy() -> None:
     assert g.rmse_m == pytest.approx(math.sqrt(rmse**2 + 0.02**2), abs=1e-4)
     assert not g.meets_minimum_count and g.pass_fail_applies
     assert group_stats(rows, "VVA", None).n == 0
+
+
+def _rows(residuals: list[float], group: str = "NVA") -> list[CheckResidual]:
+    return [
+        CheckResidual(id=f"p{i}", x=0, y=0, z_check=0, z_surface=e, residual=e, group=group)  # type: ignore[arg-type]
+        for i, e in enumerate(residuals)
+    ]
+
+
+def test_group_stats_section_7_16_figures_and_blunders() -> None:
+    res = [0.02, -0.01, 0.03, 0.0, -0.02] * 6 + [0.40]  # 31 points, one 40 cm blunder
+    g = group_stats(_rows(res), "NVA", None, target_class_cm=10)
+    assert g.n == 31 and g.meets_minimum_count
+    assert (g.min_m, g.max_m, g.median_m) == (-0.02, 0.4, 0.0)
+    assert g.blunders == ["p30"]  # > 3 × 10 cm (§7.2)
+    # without a class the data RMSE is the yardstick (§C.2)
+    assert group_stats(_rows(res), "NVA", None).blunders == ["p30"]
+
+
+def test_statements_follow_section_7_16_1() -> None:
+    ok = group_stats(_rows([0.05, -0.05] * 15), "NVA", None)  # RMSE 5 cm, n = 30
+    s = statement_for(ok, 10)
+    assert s.startswith("This data set was tested to meet ASPRS Positional Accuracy Standards for Digital Geospatial")
+    assert "Edition 2, Version 2 (2024) for a 10 (cm) RMSEV Vertical Accuracy Class." in s
+    assert s.endswith("The Non-Vegetated Vertical Accuracy (NVA) was found to be RMSEV = 5.0 (cm).")
+    assert "does NOT meet" in statement_for(ok, 4)
+    assert "tested as required by" in statement_for(ok, None)
+
+    few = group_stats(_rows([0.05, -0.05] * 5, "VVA"), "VVA", None)  # n = 10
+    s = statement_for(few, 10)
+    assert "Although the Standards call for a minimum of thirty (30) checkpoints" in s
+    assert "ONLY 10 checkpoints" in s and "produced to meet a 10 (cm) RMSEV Vertical Positional Accuracy Class" in s
+    assert s.endswith("using the reduced number of checkpoints in the VVA tested area.")
+    assert "produced to meet" not in statement_for(few, None)

@@ -611,10 +611,17 @@ def accuracy(
         str | None, typer.Option("--crs", help="Check points' compound CRS, e.g. EPSG:7850+5711")
     ] = None,
     checkpoint_rmse: Annotated[
-        float | None, typer.Option("--checkpoint-rmse", help="Vertical RMSE of the check point survey (m)")
+        float | None,
+        typer.Option(
+            "--checkpoint-rmse",
+            help="The check point survey's own 1σ vertical RMSE (m), as the surveyor reports it (ASPRS RMSE_V2)",
+        ),
     ] = None,
     target_class: Annotated[
-        float | None, typer.Option("--class-cm", help="ASPRS vertical accuracy class to test against (cm RMSEV)")
+        float | None,
+        typer.Option(
+            "--class-cm", help="ASPRS vertical accuracy class to test NVA against: the #-cm class, RMSEV ≤ # cm"
+        ),
     ] = None,
     surface: Annotated[str, typer.Option("--surface", help="Surface to test (dtm)")] = "dtm",
 ) -> None:

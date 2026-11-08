@@ -128,10 +128,14 @@ Run any of them with `--help`. All of them take `--job ID` (under `SURVEY_JOBS_D
   More than 5 % voids in a polygon is refused unless you accept it.
 - **Change**: later − earlier; |Δ| below the level of detection is "no detectable change". The LoD is given,
   or 1.96·√(σ₁² + σ₂²) from both epochs' accuracy statements.
-- **Accuracy**: ASPRS Positional Accuracy Standards, Edition 2 (2023): RMSE only (Edition 1's 95 % figure is
-  gone), at least 30 check points, check point survey accuracy folded in (√(RMSE_data² + RMSE_checks²)),
-  NVA pass/fail against `--class-cm`, VVA reported as found. Check points are given in a stated CRS and
-  transformed through the same explicit operation machinery. Residuals are surface − check.
+- **Accuracy**: ASPRS Positional Accuracy Standards, Edition 2, Version 2 (2024), checked against the
+  standard's text: RMSE only (Edition 1's 95 % figure is gone); the class is free-valued ("#-cm", NVA
+  RMSE_V ≤ #) and given with `--class-cm`; product RMSE_V = √(RMSE_V1² + RMSE_V2²) (§7.12.4), where
+  `--checkpoint-rmse` is the surveyor's 1σ vertical RMSE; NVA pass/fail, VVA reported as found; min, max,
+  mean, median, std and RMSE (§7.16); residuals beyond 3 × the target RMSE listed as blunders and a mean
+  above 25 % of it flagged as bias (§7.2). Statements use §7.16.1's wording, including its
+  reduced-checkpoint statement below 30 points. Check points are given in a stated CRS and transformed
+  through the same explicit operation machinery. Residuals are surface − check.
 - **Drone-scale data**: ingest streams; the COPC is built out of core by untwine; filters that need
   neighbours (outliers, SMRF/CSF, height above ground) run on buffered tiles whose cores partition the site
   exactly — the tiles must add up to the source's point count before they are merged.

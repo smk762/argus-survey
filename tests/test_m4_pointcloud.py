@@ -126,7 +126,10 @@ def test_accuracy_rmse_matches_injected_noise(epochs, tmp_path) -> None:  # type
     assert 0.035 < nva.rmse_data_m < 0.07, nva  # ≈ the 5 cm injected into the check heights
     assert nva.rmse_m == pytest.approx(math.sqrt(nva.rmse_data_m**2 + 0.01**2), abs=1e-4)
     assert not vva.pass_fail_applies and not vva.meets_minimum_count
-    assert "meets" in r.statement and "95" not in r.statement
+    assert r.statement.startswith("This data set was tested to meet ASPRS") and "95" not in r.statement
+    assert "Version 2 (2024)" in r.statement and "for a 10 (cm) RMSEV Vertical Accuracy Class" in r.statement
+    assert "ONLY 10 checkpoints" in r.statement  # VVA has 10: §7.16.1's reduced-checkpoint wording
+    assert nva.min_m <= nva.median_m <= nva.max_m
     assert any("at least 30" in n for n in r.notes)
     with j1.product_path("residuals").open() as fh:
         assert len(list(csv.DictReader(fh))) == 50

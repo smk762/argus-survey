@@ -514,11 +514,13 @@ def section_accuracy(job: Job) -> str:
             e(g.group),
             e(g.n),
             e(g.excluded),
+            num(g.min_m),
+            num(g.max_m),
             num(g.mean_m),
+            num(g.median_m),
             num(g.std_m),
             num(g.rmse_data_m),
             num(g.rmse_m),
-            num(g.max_abs_m),
             "pass/fail" if g.pass_fail_applies else "reported as found",
             "yes" if g.meets_minimum_count else '<strong style="color:var(--bad)">no</strong>',
         ]
@@ -526,11 +528,25 @@ def section_accuracy(job: Job) -> str:
     ]
     out.append(
         table(
-            ["Group", "n", "Excl.", "Mean m", "Std m", "RMSE data m", "RMSE product m", "Max |e| m", "Use", "≥ 30"],
+            [
+                "Group",
+                "n",
+                "Excl.",
+                "Min m",
+                "Max m",
+                "Mean m",
+                "Median m",
+                "Std m",
+                "RMSE data m",
+                "RMSE product m",
+                "Use",
+                "≥ 30",
+            ],
             rows,
-            {1, 2, 3, 4, 5, 6, 7},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9},
         )
     )
+    out.append("<p class='note'>RMSE product = √(RMSE data² + check point survey RMSE²) (ASPRS ed. 2 v2 §7.12.4).</p>")
     if a.notes:
         out.append("<ul>" + "".join(f"<li class='note'>{e(n)}</li>" for n in a.notes) + "</ul>")
     res_rows = [

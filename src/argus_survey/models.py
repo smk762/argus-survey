@@ -475,6 +475,12 @@ class AccuracyGroup(_Model):
     max_abs_m: float | None
     meets_minimum_count: bool
     pass_fail_applies: bool  # NVA: yes; VVA: reported as found (ed. 2)
+    # ed. 2 v2 §7.16: min, max, median alongside mean, std and RMSE (signed residuals)
+    min_m: float | None = None
+    max_m: float | None = None
+    median_m: float | None = None
+    # ids of residuals beyond 3 × the target RMSE (§7.2 blunder) or, with no class, 3 × the data RMSE (§C.2)
+    blunders: list[str] = Field(default_factory=list)
 
 
 class AccuracyReport(_Model):
