@@ -2328,7 +2328,7 @@
     },
     "RasterView": {
       "additionalProperties": false,
-      "description": "``GET /jobs/{id}/web/{kind}`` for a raster: a Web Mercator PNG placed by its lon/lat corners (TL, TR, BR, BL).\n\n``ramp`` names the fixed colour ramp (``terrain``: blue \u2192 red over ``range``; ``diverging``: blue (\u2212) \u2192 white (0)\n\u2192 red (+) for a DoD; ``hillshade``: grey, no ``range``). A derived view, never a deliverable.",
+      "description": "``GET /jobs/{id}/web/{kind}`` for a raster: a Web Mercator PNG placed by its lon/lat corners (TL, TR, BR, BL).\n\n``ramp`` names the fixed colour ramp (``terrain``: blue \u2192 red over ``range``; ``diverging``: blue (\u2212) \u2192 transparent (0)\n\u2192 red (+) for a DoD; ``hillshade``: grey, no ``range``). A derived view, never a deliverable.",
       "properties": {
         "coordinates": {
           "items": {

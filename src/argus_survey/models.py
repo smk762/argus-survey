@@ -618,7 +618,7 @@ class HealthInfo(_Model):
 class RasterView(_Model):
     """``GET /jobs/{id}/web/{kind}`` for a raster: a Web Mercator PNG placed by its lon/lat corners (TL, TR, BR, BL).
 
-    ``ramp`` names the fixed colour ramp (``terrain``: blue → red over ``range``; ``diverging``: blue (−) → white (0)
+    ``ramp`` names the fixed colour ramp (``terrain``: blue → red over ``range``; ``diverging``: blue (−) → transparent (0)
     → red (+) for a DoD; ``hillshade``: grey, no ``range``). A derived view, never a deliverable.
     """
 
