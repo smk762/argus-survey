@@ -235,6 +235,22 @@ class IngestRecord(_Model):
     scale_factors: ScaleFactors | None = None  # grid-to-ground at the site
 
 
+class ExportRecord(_Model):
+    """A point-cloud deliverable for ReCap / Civil 3D (``export --points``)."""
+
+    format: Literal["las", "e57"]
+    path: str  # under the job dir
+    source: Literal["classified", "copc"]
+    points: int
+    crop: str | None = None
+    thin_m: float | None = None  # voxel size: first point kept per voxel
+    crs: str  # the coordinates' CRS (definition)
+    crs_name: str
+    crs_in_file: bool  # LAS 1.4 WKT: yes; E57: no CRS field
+    classes: dict[int, int] = Field(default_factory=dict)  # ASPRS code -> count
+    notes: str  # notes file under the job dir
+
+
 class JobSidecar(_Model):
     """``job.json`` — the API contract and the provenance record of a job."""
 
@@ -255,6 +271,7 @@ class JobSidecar(_Model):
     change: ChangeReport | None = None
     accuracy: AccuracyReport | None = None
     profiles: list[ProfileReport] = Field(default_factory=list)
+    exports: list[ExportRecord] = Field(default_factory=list)
     commands: list[CommandRecord] = Field(default_factory=list)
     products: dict[str, Product] = Field(default_factory=dict)
     timings: dict[str, float] = Field(default_factory=dict)
@@ -632,6 +649,13 @@ class RunBody(IngestBody):
     fill_voids: int | None = Field(default=None, ge=1)
 
 
+class ExportBody(_Model):
+    points: Literal["las", "e57"] = "las"
+    polygon: str | None = None  # a polygon file under the data root
+    polygon_srs: str | None = None
+    thin: float | None = Field(default=None, gt=0)
+
+
 class EmptyBody(_Model):
     pass
 
@@ -729,6 +753,7 @@ WIRE_MODELS: tuple[type[BaseModel], ...] = (
     AccuracyBody,
     ProfileBody,
     RunBody,
+    ExportBody,
     EmptyBody,
     StartEvent,
     StepEvent,

@@ -96,16 +96,17 @@ so the choice can be checked.
 |---|---|
 | `doctor` | tool versions, PDAL/GDAL drivers, datum grids (SHA256-checked), key transformations |
 | `info FILE` | header summary and CRS record (no job) |
-| `ingest FILES… --job ID` | `points.copc.laz` in the job CRS; inputs pinned; datum settled |
+| `ingest FILES… --job ID` | `points.copc.laz` in the job CRS; inputs pinned; datum settled; grid-to-ground scale factor (LAS/LAZ/COPC, or E57 with `--s-srs`) |
 | `qa` | `qa.json`, `density.tif`, `boundary.geojson`, `gaps.geojson` |
-| `ground [--method smrf\|csf]` | `ground.copc.laz` (every point kept, reclassified) |
-| `surfaces --res R [--fill-voids N]` | `dtm.tif`, `dsm.tif`, `chm.tif`, void masks, `hillshade.tif` |
+| `ground [--method smrf\|csf] [--preset stockpile]` | `ground.copc.laz` (every point kept, reclassified; `stockpile` keeps steep piles as ground) |
+| `surfaces --res R [--fill-voids N] [--chm-method max\|radius]` | `dtm.tif`, `dsm.tif`, `chm.tif`, void masks, `hillshade.tif` |
 | `contours --interval I [--index N]` | `contours.gpkg`, `contours.geojson` |
 | `volume --polygon P --base plane\|lowest-perimeter\|surface:T` | `volume.json` |
 | `cutfill --design D.tif` | `cutfill.json` |
 | `change --against EARLIER [--lod M \| --lod-from-accuracy]` | `change.json`, `dod.tif`, `dod_lod.tif` |
 | `accuracy --checks C.csv --crs CRS` | `accuracy.json`, `accuracy_residuals.csv` |
 | `profile --line L --step S` | `profile.csv`, `profile.svg` |
+| `export --points las\|e57 [--polygon P] [--thin S]` | `points.las` (LAS 1.4, uncompressed) or `points.e57` for ReCap / Civil 3D, plus notes (CRS, class legend) |
 | `report` | `report.html` |
 | `run FILES…` | ingest → qa → ground → surfaces → contours → report |
 | `synth OUT.laz` | a synthetic scene with known answers (`--kit DIR`: every demo input, see `kit-truth.json`) |

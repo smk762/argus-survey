@@ -700,6 +700,30 @@ def profile(
 
 
 @app.command()
+def export(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    points: Annotated[str, typer.Option("--points", help="las (LAS 1.4, uncompressed) or e57, for ReCap")] = "las",
+    polygon: Annotated[Path | None, typer.Option("--polygon", help="Keep only points inside polygon(s)")] = None,
+    polygon_srs: Annotated[str | None, typer.Option("--polygon-srs", help="CRS of the polygon if it has none")] = None,
+    thin: Annotated[
+        float | None, typer.Option("--thin", help="Keep the first point per voxel of this size (m)")
+    ] = None,
+) -> None:
+    """Point cloud for ReCap / Civil 3D (points.las or points.e57) with export notes: CRS, class legend."""
+    from argus_survey.export import export_points
+
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = export_points(j, points, polygon=polygon, polygon_srs=polygon_srs, thin=thin)  # type: ignore[arg-type]
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    console.print(f"[green]export[/] {r.points:,} points → {j.path(r.path)} (notes: {r.notes})")
+    _warnings(j, n)
+
+
+@app.command()
 def report(job: JobOpt = None, out: OutOpt = None) -> None:
     """Write the self-contained, printable report.html for a job."""
     from argus_survey.report import report as run_report

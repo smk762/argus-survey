@@ -50,6 +50,7 @@ from argus_survey.models import (
     DoneEvent,
     EmptyBody,
     ErrorEvent,
+    ExportBody,
     GroundBody,
     HealthInfo,
     IngestBody,
@@ -67,7 +68,7 @@ from argus_survey.tools import ToolError, versions
 PROCESS_REFUSAL = "processing is disabled on this host (set SURVEY_ALLOW_PROCESS=1 to enable POST /jobs/{id}/{step})"
 STATIC = Path(__file__).parent / "static"
 INPUT_KINDS = {
-    "points": (".las", ".laz"),
+    "points": (".las", ".laz", ".e57"),
     "vectors": (".geojson", ".json", ".gpkg", ".shp", ".fgb"),
     "rasters": (".tif", ".tiff", ".vrt"),
     "tables": (".csv", ".txt"),
@@ -226,6 +227,7 @@ def create_app(
         from argus_survey.accuracy import accuracy
         from argus_survey.change import change
         from argus_survey.contours import contours
+        from argus_survey.export import export_points
         from argus_survey.ground import ground
         from argus_survey.ingest import ingest
         from argus_survey.pipeline import run_all
@@ -375,6 +377,13 @@ def create_app(
                 False,
             ),
             "profile": (ProfileBody, profile_run, False),
+            "export": (
+                ExportBody,
+                lambda j, b: export_points(
+                    j, b.points, polygon=opt_path(b.polygon, "polygon"), polygon_srs=b.polygon_srs, thin=b.thin
+                ),
+                False,
+            ),
             "report": (EmptyBody, lambda j, _b: report(j), False),
             "run": (
                 RunBody,

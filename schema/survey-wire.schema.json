@@ -1290,6 +1290,148 @@
       "title": "ErrorEvent",
       "type": "object"
     },
+    "ExportBody": {
+      "additionalProperties": false,
+      "properties": {
+        "points": {
+          "default": "las",
+          "enum": [
+            "las",
+            "e57"
+          ],
+          "title": "Points",
+          "type": "string"
+        },
+        "polygon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon"
+        },
+        "polygon_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon Srs"
+        },
+        "thin": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thin"
+        }
+      },
+      "title": "ExportBody",
+      "type": "object"
+    },
+    "ExportRecord": {
+      "additionalProperties": false,
+      "description": "A point-cloud deliverable for ReCap / Civil 3D (``export --points``).",
+      "properties": {
+        "classes": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Classes",
+          "type": "object"
+        },
+        "crop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop"
+        },
+        "crs": {
+          "title": "Crs",
+          "type": "string"
+        },
+        "crs_in_file": {
+          "title": "Crs In File",
+          "type": "boolean"
+        },
+        "crs_name": {
+          "title": "Crs Name",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "las",
+            "e57"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "points": {
+          "title": "Points",
+          "type": "integer"
+        },
+        "source": {
+          "enum": [
+            "classified",
+            "copc"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "thin_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thin M"
+        }
+      },
+      "required": [
+        "format",
+        "path",
+        "source",
+        "points",
+        "crs",
+        "crs_name",
+        "crs_in_file",
+        "notes"
+      ],
+      "title": "ExportRecord",
+      "type": "object"
+    },
     "FileRef": {
       "additionalProperties": false,
       "description": "A file pinned by digest. ``path`` is relative to the job dir for products, absolute for inputs.",
@@ -1915,6 +2057,13 @@
             }
           ],
           "default": null
+        },
+        "exports": {
+          "items": {
+            "$ref": "#/$defs/ExportRecord"
+          },
+          "title": "Exports",
+          "type": "array"
         },
         "ground": {
           "anyOf": [
