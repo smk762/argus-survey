@@ -615,6 +615,21 @@ class HealthInfo(_Model):
     tools: ToolVersions
 
 
+class RasterView(_Model):
+    """``GET /jobs/{id}/web/{kind}`` for a raster: a Web Mercator PNG placed by its lon/lat corners (TL, TR, BR, BL).
+
+    ``ramp`` names the fixed colour ramp (``terrain``: blue → red over ``range``; ``diverging``: blue (−) → white (0)
+    → red (+) for a DoD; ``hillshade``: grey, no ``range``). A derived view, never a deliverable.
+    """
+
+    kind: str
+    png: str
+    url: str
+    coordinates: list[list[float]]
+    range: list[float] | None = None
+    ramp: Literal["terrain", "diverging", "hillshade"] | None = None
+
+
 class StartEvent(_Model):
     """SSE ``start``: the step was accepted and is running."""
 
@@ -668,6 +683,7 @@ WIRE_MODELS: tuple[type[BaseModel], ...] = (
     JobDigest,
     DoctorReport,
     HealthInfo,
+    RasterView,
     IngestBody,
     QaBody,
     GroundBody,

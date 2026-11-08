@@ -54,6 +54,7 @@ from argus_survey.models import (
     IngestBody,
     ProfileBody,
     QaBody,
+    RasterView,
     RunBody,
     StartEvent,
     SurfacesBody,
@@ -189,7 +190,7 @@ def create_app(
             meta = overlays.raster_overlay(j, kind)
         except SurveyError as exc:
             raise HTTPException(404, str(exc)) from exc
-        return {**meta, "url": f"/jobs/{job_id}/web/{kind}/image"}
+        return RasterView.model_validate({**meta, "url": f"/jobs/{job_id}/web/{kind}/image"}).model_dump(mode="json")
 
     @app.get("/jobs/{job_id}/web/{kind}/image")
     def web_image(job_id: str, kind: str) -> FileResponse:

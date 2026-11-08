@@ -2326,6 +2326,74 @@
       "title": "RasterStats",
       "type": "object"
     },
+    "RasterView": {
+      "additionalProperties": false,
+      "description": "``GET /jobs/{id}/web/{kind}`` for a raster: a Web Mercator PNG placed by its lon/lat corners (TL, TR, BR, BL).\n\n``ramp`` names the fixed colour ramp (``terrain``: blue \u2192 red over ``range``; ``diverging``: blue (\u2212) \u2192 white (0)\n\u2192 red (+) for a DoD; ``hillshade``: grey, no ``range``). A derived view, never a deliverable.",
+      "properties": {
+        "coordinates": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Coordinates",
+          "type": "array"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "png": {
+          "title": "Png",
+          "type": "string"
+        },
+        "ramp": {
+          "anyOf": [
+            {
+              "enum": [
+                "terrain",
+                "diverging",
+                "hillshade"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ramp"
+        },
+        "range": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Range"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "png",
+        "url",
+        "coordinates"
+      ],
+      "title": "RasterView",
+      "type": "object"
+    },
     "RunBody": {
       "additionalProperties": false,
       "properties": {

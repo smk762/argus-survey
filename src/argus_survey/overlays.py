@@ -52,14 +52,18 @@ def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
     work.mkdir(exist_ok=True)
     try:
         coloured = src
+        value_range: list[float] | None = None
+        ramp_name = "hillshade"
         if kind != "hillshade":
             s = rasters.stats(src, sink=None, step="web")
             lo, hi = (s.minimum or 0.0), (s.maximum or 1.0)
             if kind.startswith("dod"):
                 m = max(abs(lo), abs(hi), 0.1)
                 ramp = [(-m, (33, 102, 172)), (0.0, (247, 247, 247)), (m, (178, 24, 43))]
+                value_range, ramp_name = [-m, m], "diverging"
             else:
                 ramp = [(lo + f * (hi - lo), c) for f, c in TERRAIN]
+                value_range, ramp_name = [lo, hi], "terrain"
             table = work / "ramp.txt"
             table.write_text("".join(f"{v!r} {r} {g} {b}\n" for v, (r, g, b) in ramp) + "nv 0 0 0 0\n")
             coloured = work / "c.tif"
@@ -88,7 +92,13 @@ def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
         info = run_json(["gdalinfo", "-json", str(merc)], step="web", sink=None)
         corners = info["wgs84Extent"]["coordinates"][0]  # ring: TL, BL, BR, TR, TL
         tl, bl, br, tr = corners[0], corners[1], corners[2], corners[3]
-        meta = {"kind": kind, "png": png.name, "coordinates": [tl, tr, br, bl]}
+        meta = {
+            "kind": kind,
+            "png": png.name,
+            "coordinates": [tl, tr, br, bl],
+            "range": value_range,  # the values at the ramp's ends (None for hillshade)
+            "ramp": ramp_name,
+        }
         meta_path.write_text(json.dumps(meta))
         return meta
     finally:
