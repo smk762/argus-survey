@@ -68,6 +68,32 @@ def test_ids_and_steps_validated(roots) -> None:  # type: ignore[no-untyped-def]
     assert c.get("/jobs/missing").status_code == 404
 
 
+def test_health_matches_its_model(roots) -> None:  # type: ignore[no-untyped-def]
+    from argus_survey.models import HealthInfo
+
+    body = client(roots, False).get("/health").json()
+    assert HealthInfo.model_validate(body).service == "argus-survey"
+
+
+def test_volume_refuses_a_file_and_a_drawn_polygon_together(roots) -> None:  # type: ignore[no-untyped-def]
+    from argus_survey.jobs import JobStore
+
+    JobStore(roots[1]).open("j1", create=True)
+    ring = [[115.9, -31.9], [115.901, -31.9], [115.901, -31.901], [115.9, -31.9]]
+    body = {"polygon": "pile.geojson", "polygon_geojson": {"type": "Polygon", "coordinates": [ring]}}
+    events = sse(client(roots, True).post("/jobs/j1/volume", json=body).text)
+    assert events[-1][0] == "error" and "not both" in events[-1][1]["message"]
+    events = sse(client(roots, True).post("/jobs/j1/volume", json={}).text)
+    assert events[-1][0] == "error" and "polygon_geojson" in events[-1][1]["message"]
+    drawn = {"type": "Polygon", "coordinates": [ring]}
+    events = sse(
+        client(roots, True).post("/jobs/j1/volume", json={"polygon_geojson": drawn, "polygon_srs": "EPSG:7850"}).text
+    )
+    assert events[-1][0] == "error" and "always WGS 84" in events[-1][1]["message"]
+    events = sse(client(roots, True).post("/jobs/j1/volume", json={"polygon": "pile.geojson", "name": "A"}).text)
+    assert events[-1][0] == "error" and "drawn polygon" in events[-1][1]["message"]
+
+
 def test_viewer_is_served(roots) -> None:  # type: ignore[no-untyped-def]
     r = client(roots, False).get("/viewer")
     assert r.status_code == 200 and "<html" in r.text.lower()
@@ -109,3 +135,34 @@ def test_run_over_sse_then_read_products(tmp_path: Path) -> None:
     assert c.get("/jobs/demo/profile_svg").status_code == 200
     # web views never touch the provenance log; the profile step does
     assert len(c.get("/jobs/demo").json()["commands"]) > n_commands
+
+
+@pytest.mark.tools
+def test_demo_kit_known_answers_over_the_api(tmp_path: Path) -> None:
+    """The UI's demo path: the kit's stockpile (file and drawn) and pad cut/fill come back at their known answers."""
+    from argus_survey.tools import run
+
+    data, jobs = tmp_path / "in", tmp_path / "jobs"
+    truth = synthetic.write_kit(data)
+    c = TestClient(create_app(data_dir=data, jobs_dir=jobs, allow_process=True))
+    events = sse(c.post("/jobs/kit/run", json={"inputs": ["site-e1.laz"], "res": 0.5, "interval": 0.5}).text)
+    assert events[-1][0] == "done", events[-1]
+
+    vol = sse(c.post("/jobs/kit/volume", json={"polygon": "stockpile.geojson", "surface": "dsm"}).text)
+    assert vol[-1][0] == "done", vol[-1]
+    pile = vol[-1][1]["result"]["zones"][0]
+    assert pile["name"] == "stockpile"
+    assert pile["above_m3"] == pytest.approx(truth["stockpile_volume_m3"], rel=0.03)
+
+    lonlat = tmp_path / "stockpile-4326.geojson"
+    run(["ogr2ogr", "-f", "GeoJSON", "-t_srs", "EPSG:4326", str(lonlat), str(data / "stockpile.geojson")], step="t")
+    geom = json.loads(lonlat.read_text())["features"][0]["geometry"]
+    drawn = sse(c.post("/jobs/kit/volume", json={"polygon_geojson": geom, "name": "drawn pile", "surface": "dsm"}).text)
+    assert drawn[-1][0] == "done", drawn[-1]
+    zone = drawn[-1][1]["result"]["zones"][0]
+    assert zone["name"] == "drawn pile" and zone["above_m3"] == pytest.approx(pile["above_m3"], rel=0.01)
+
+    cf = sse(c.post("/jobs/kit/cutfill", json={"design": "design.tif", "polygon": "pad.geojson"}).text)
+    assert cf[-1][0] == "done", cf[-1]
+    pad = cf[-1][1]["result"]["zones"][0]
+    assert pad["below_m3"] - pad["above_m3"] == pytest.approx(truth["pad_net_cut_m3"], rel=0.03)

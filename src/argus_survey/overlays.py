@@ -29,6 +29,7 @@ TERRAIN = [
     (1.0, (215, 25, 28)),
 ]
 WEB_MAX_PX = 2048
+VIEW_VERSION = 2  # bump when the rendering changes, so cached views are rebuilt (2: transparent DoD zero)
 
 
 def _cache(job: Job, kind: str, suffix: str) -> tuple[Path, Path]:
@@ -37,7 +38,7 @@ def _cache(job: Job, kind: str, suffix: str) -> tuple[Path, Path]:
         raise SurveyError(f"job {job.id!r} has no {kind!r} product")
     web = job.path(".web")
     web.mkdir(exist_ok=True)
-    return web / f"{kind}.{product.sha256[:16]}{suffix}", job.path(product.path)
+    return web / f"{kind}.{product.sha256[:16]}.v{VIEW_VERSION}{suffix}", job.path(product.path)
 
 
 def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
@@ -52,16 +53,22 @@ def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
     work.mkdir(exist_ok=True)
     try:
         coloured = src
+        value_range: list[float] | None = None
+        ramp_name = "hillshade"
         if kind != "hillshade":
             s = rasters.stats(src, sink=None, step="web")
-            lo, hi = (s.minimum or 0.0), (s.maximum or 1.0)
+            lo = 0.0 if s.minimum is None else s.minimum
+            hi = 1.0 if s.maximum is None else s.maximum
             if kind.startswith("dod"):
                 m = max(abs(lo), abs(hi), 0.1)
-                ramp = [(-m, (33, 102, 172)), (0.0, (247, 247, 247)), (m, (178, 24, 43))]
+                # transparent at 0 so "no change" shows the map beneath; opaque at the ends
+                ramp = [(-m, (33, 102, 172, 255)), (0.0, (247, 247, 247, 0)), (m, (178, 24, 43, 255))]
+                value_range, ramp_name = [-m, m], "diverging"
             else:
-                ramp = [(lo + f * (hi - lo), c) for f, c in TERRAIN]
+                ramp = [(lo + f * (hi - lo), (*c, 255)) for f, c in TERRAIN]
+                value_range, ramp_name = [lo, hi], "terrain"
             table = work / "ramp.txt"
-            table.write_text("".join(f"{v!r} {r} {g} {b}\n" for v, (r, g, b) in ramp) + "nv 0 0 0 0\n")
+            table.write_text("".join(f"{v!r} {r} {g} {b} {a}\n" for v, (r, g, b, a) in ramp) + "nv 0 0 0 0\n")
             coloured = work / "c.tif"
             run(["gdaldem", "color-relief", "-q", "-alpha", str(src), str(table), str(coloured)], step="web", sink=None)
         merc = work / "m.tif"
@@ -88,7 +95,13 @@ def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
         info = run_json(["gdalinfo", "-json", str(merc)], step="web", sink=None)
         corners = info["wgs84Extent"]["coordinates"][0]  # ring: TL, BL, BR, TR, TL
         tl, bl, br, tr = corners[0], corners[1], corners[2], corners[3]
-        meta = {"kind": kind, "png": png.name, "coordinates": [tl, tr, br, bl]}
+        meta = {
+            "kind": kind,
+            "png": png.name,
+            "coordinates": [tl, tr, br, bl],
+            "range": value_range,  # the values at the ramp's ends (None for hillshade)
+            "ramp": ramp_name,
+        }
         meta_path.write_text(json.dumps(meta))
         return meta
     finally:

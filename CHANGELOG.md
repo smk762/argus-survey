@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Wire contract for UIs: `argus-survey schema [--check]` writes `schema/survey-wire.schema.json` (job.json, digests, health, every request body and SSE event) with `argus_cortex.wire`; the API's request bodies moved to `models.py`, and `/health` and the SSE payloads are built from the models. [argus-sightline](https://github.com/smk762/argus-sightline) generates its types from it.
+- `volume` and `cutfill` over the API take a polygon drawn on the map (`polygon_geojson`, a WGS 84 GeoJSON geometry, plus an optional zone `name`) instead of a file, the way `profile` takes a drawn line.
+- `argus-survey synth DIR --kit` (`make demo-kit`): every demo input with known answers: two epochs, check points, stockpile and pad polygons and a design surface, plus `kit-truth.json`.
 - Viewer (`/viewer`): MapLibre map of surfaces, density, change, contours and coverage; the classified cloud streamed from the COPC (copc.js + laz-perf + three.js) coloured by elevation/class/intensity; job CRS and warnings; profile drawing when processing is allowed.
 - Docs: README walkthrough on public USGS 3DEP data (`make sample`), WA datum table, runbook, data sources, argus-atlas showcase. `make demo`/`up`/`down`.
 - Ingest refuses geographic and Web Mercator working CRSs (Mercator metres are not ground metres).

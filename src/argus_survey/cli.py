@@ -223,16 +223,34 @@ def ingest(
 
 @app.command()
 def synth(
-    out: Annotated[Path, typer.Argument(help="Output .las/.laz")],
+    out: Annotated[Path, typer.Argument(help="Output .las/.laz (with --kit: the directory to fill)")],
     epoch: Annotated[int, typer.Option("--epoch", min=1, max=2, help="2: the stockpile has grown 1 m at its apex")] = 1,
     photogrammetry: Annotated[
         bool, typer.Option("--photogrammetry", help="No returns info, RGB, no ground under trees")
     ] = False,
     srs: Annotated[str, typer.Option("--srs", help="CRS written to the file, or 'none'")] = "EPSG:7850+5711",
     checks: Annotated[Path | None, typer.Option("--checks", help="Also write check points CSV here")] = None,
+    kit: Annotated[
+        bool,
+        typer.Option("--kit", help="Write every demo input into OUT: two epochs, checks, polygons, design surface"),
+    ] = False,
 ) -> None:
     """Write a synthetic survey scene with known answers (cone stockpile, building, trees) — for demos and tests."""
     from argus_survey import synthetic
+
+    if kit:
+        if epoch != 1 or photogrammetry or checks is not None:
+            raise fail(
+                SurveyError("--kit writes both epochs and checks.csv itself; drop --epoch/--photogrammetry/--checks")
+            )
+        try:
+            truth = synthetic.write_kit(out, srs=srs)
+        except (SurveyError, ValueError) as exc:
+            raise fail(SurveyError(str(exc))) from exc
+        console.print(f"wrote the demo kit to {out}/ · known answers in {out / 'kit-truth.json'}")
+        for key in ("stockpile_volume_m3", "change_gain_m3", "pad_net_cut_m3"):
+            console.print(f"  {key}: {truth[key]}")
+        return
 
     scene = synthetic.Scene(photogrammetry=photogrammetry)
     if epoch == 2:
@@ -656,6 +674,34 @@ def report(job: JobOpt = None, out: OutOpt = None) -> None:
     except SurveyError as exc:
         raise fail(exc) from exc
     console.print(f"[green]report[/] {path}")
+
+
+DEFAULT_SCHEMA_PATH = Path("schema/survey-wire.schema.json")
+
+
+@app.command()
+def schema(
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the JSON Schema")
+    ] = DEFAULT_SCHEMA_PATH,
+    check: Annotated[bool, typer.Option("--check", help="Exit non-zero if the committed schema is stale (CI)")] = False,
+) -> None:
+    """Write the wire-contract JSON Schema (job.json, request bodies, SSE events) that UIs generate types from."""
+    from argus_survey.models import wire_schema_text
+
+    try:
+        rendered = wire_schema_text()
+    except ImportError as exc:  # pragma: no cover - argus-cortex ships with the server extra
+        raise fail(SurveyError("the schema needs argus-cortex: pip install argus-survey[server]")) from exc
+    if check:
+        if not output.is_file() or output.read_text(encoding="utf-8") != rendered:
+            console.print(f"[red]{output} is stale[/]: run `argus-survey schema` and commit the result")
+            raise typer.Exit(1)
+        console.print(f"{output} is up to date")
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered, encoding="utf-8")
+    console.print(f"wrote {output}")
 
 
 @app.command()
