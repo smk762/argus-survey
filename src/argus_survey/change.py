@@ -4,11 +4,15 @@ Both jobs must share CRS (horizontal *and* vertical) and a grid lattice — whic
 grids of §6.4 make the normal case for two surveys processed at the same resolution — so the
 difference is cell for cell, never resampled. Only the overlap of the two grids is compared.
 
-Cells with |Δ| below the LoD are "no detectable change" (0 in ``dod_lod.tif``). The LoD is
+Cells with |Δ| below the LoD are "no detectable change" (0 in ``dod_<surface>_lod.tif``). The LoD is
 either given (``--lod``, default 0.10 m) or derived from both epochs' accuracy statements:
 LoD95 = 1.96 · √(σ₁² + σ₂²), with σ the NVA RMSE of each epoch (the usual DoD
 error-propagation rule; unrelated to ASPRS reporting, which no longer uses 95 %).
 Both sidecars are pinned by SHA256 so the comparison is reproducible.
+
+Outputs are per surface (``dod_dtm.tif``, ``dod_dsm_lod.tif``, ``change_dtm.json`` …), so a DTM
+and a DSM comparison live side by side; ``sidecar.changes`` holds the latest run per surface.
+The ``change``/``dod``/``dod_lod`` products and ``sidecar.change`` name the most recent run.
 """
 
 from __future__ import annotations
@@ -66,6 +70,8 @@ def change(
     against.require_crs(STEP, height=True)
     if job.id == against.id:
         raise SurveyError("compare two different jobs")
+    if surface not in ("dtm", "dsm"):
+        raise SurveyError(f"--surface must be dtm or dsm, not {surface!r}")
     a_crs, b_crs = job.sidecar.crs, against.sidecar.crs
     assert a_crs is not None and b_crs is not None
     if not crs_mod.same_crs(a_crs, b_crs):
@@ -137,17 +143,18 @@ def change(
             v = difference_volumes(up, lo, zfile, win, work, lod=lod_m, sink=sink, step=STEP)["compared area"]
 
             void = "isnodata(A) || isnodata(B)"
+            dod, dod_lod, report_name = f"dod_{surface}.tif", f"dod_{surface}_lod.tif", f"change_{surface}.json"
             rasters.calc(
-                job.path("dod.tif"), f"{void} ? {rasters.NODATA!r} : A - B", {"A": up, "B": lo}, sink=sink, step=STEP
+                job.path(dod), f"{void} ? {rasters.NODATA!r} : A - B", {"A": up, "B": lo}, sink=sink, step=STEP
             )
             rasters.calc(
-                job.path("dod_lod.tif"),
+                job.path(dod_lod),
                 f"{void} ? {rasters.NODATA!r} : (abs(A - B) < {lod_m!r} ? 0 : A - B)",
                 {"A": up, "B": lo},
                 sink=sink,
                 step=STEP,
             )
-            for p in (job.path("dod.tif"), job.path("dod_lod.tif")):
+            for p in (job.path(dod), job.path(dod_lod)):
                 rasters.set_crs(p, srs, sink=sink, step=STEP)
 
             area = v["area_m2"]
@@ -171,17 +178,15 @@ def change(
                 area=polygon.name if polygon is not None else "whole overlap of the two epochs",
             )
             job.sidecar.change = report
-            job.path("change.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
-            job.add_product("change", "change.json", step=STEP, description=f"Change against {against.id}")
-            job.add_product(
-                "dod", "dod.tif", step=STEP, description=f"{surface.upper()} of difference (later − earlier)"
-            )
-            job.add_product(
-                "dod_lod",
-                "dod_lod.tif",
-                step=STEP,
-                description=f"DoD with |Δ| < {lod_m:.3f} m set to 0 (no detectable change)",
-            )
+            job.sidecar.changes = [c for c in job.sidecar.changes if c.surface != surface] + [report]
+            job.path(report_name).write_text(report.model_dump_json(indent=2), encoding="utf-8")
+            desc = f"{surface.upper()} change against {against.id}"
+            dod_desc = f"{surface.upper()} of difference (later − earlier)"
+            lod_desc = f"{surface.upper()} DoD with |Δ| < {lod_m:.3f} m set to 0 (no detectable change)"
+            for suffix in (f"_{surface}", ""):  # per surface, and the latest run under the plain kinds
+                job.add_product(f"change{suffix}", report_name, step=STEP, description=desc)
+                job.add_product(f"dod{suffix}", dod, step=STEP, description=dod_desc)
+                job.add_product(f"dod{suffix}_lod" if suffix else "dod_lod", dod_lod, step=STEP, description=lod_desc)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return report
