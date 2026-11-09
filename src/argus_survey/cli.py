@@ -267,7 +267,10 @@ def synth(
 
 
 WorkersOpt = Annotated[
-    int | None, typer.Option("--workers", min=1, help="Parallel tiles (default: SURVEY_WORKERS or ≤4)")
+    int | None,
+    typer.Option(
+        "--workers", min=1, help="Parallel tiles (default: SURVEY_WORKERS, else ≤4 as CPUs and ~4 GiB each allow)"
+    ),
 ]
 
 
