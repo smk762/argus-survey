@@ -155,10 +155,11 @@ def info(
         return
     s = report["summary"]
     b = s["bounds"]
-    console.print(
-        f"[bold]{path.name}[/] · {s['count']:,} points · LAS {s['las_version']} format {s['point_format']}"
-        + (" · COPC" if s["copc"] else "")
-    )
+    # readers.copc reports no LAS header block: say only what the reader knows
+    kind = f"LAS {s['las_version']} format {s['point_format']}" if s["las_version"] else None
+    if s["copc"]:
+        kind = f"{kind} · COPC" if kind else "COPC"
+    console.print(f"[bold]{path.name}[/] · {s['count']:,} points" + (f" · {kind}" if kind else ""))
     console.print(
         f"bounds  x {b['minx']:.3f} … {b['maxx']:.3f}   y {b['miny']:.3f} … {b['maxy']:.3f}   "
         f"z {b['minz']:.3f} … {b['maxz']:.3f}"
@@ -558,7 +559,7 @@ def change(
     polygon: Annotated[Path | None, typer.Option("--polygon", help="Only within these polygon(s)")] = None,
     polygon_srs: Annotated[str | None, typer.Option("--polygon-srs")] = None,
 ) -> None:
-    """DEM of difference (this job − --against) with a level of detection (change.json, dod.tif)."""
+    """DEM of difference (this job − --against) with a level of detection (change_<surface>.json, dod_<surface>.tif)."""
     from argus_survey.change import change as run_change
     from argus_survey.jobs import JobStore
 
