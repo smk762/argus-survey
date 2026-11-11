@@ -51,6 +51,27 @@ PRESETS: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 
+def filter_params(method: str, params: dict[str, Any] | None = None, preset: str | None = None) -> dict[str, Any]:
+    """The ground filter's parameters: method defaults, then *preset*, then explicit *params*; refuses bad input.
+
+    Cheap and job-free, so ``run`` can check its arguments before an expensive ingest.
+    """
+    if method not in ("smrf", "csf"):
+        raise SurveyError(f"unknown ground method {method!r}; choose smrf or csf")
+    defaults = SMRF_DEFAULTS if method == "smrf" else CSF_DEFAULTS
+    unknown = set(params or {}) - set(defaults)
+    if unknown:
+        raise SurveyError(f"unknown {method} parameter(s): {', '.join(sorted(unknown))}")
+    base = dict(defaults)
+    if preset is not None:
+        if preset not in PRESETS:
+            raise SurveyError(f"unknown ground preset {preset!r}; choose from {', '.join(sorted(PRESETS))}")
+        if method not in PRESETS[preset]:
+            raise SurveyError(f"preset {preset!r} is for {', '.join(PRESETS[preset])} only, not {method}")
+        base.update(PRESETS[preset][method])
+    return {**base, **{k: v for k, v in (params or {}).items() if v is not None}}
+
+
 def ground(
     job: Job,
     *,
@@ -64,18 +85,7 @@ def ground(
     copc = job.product_path("copc", needed_by=STEP)
     ingest = job.sidecar.ingest
     assert ingest is not None
-    defaults = SMRF_DEFAULTS if method == "smrf" else CSF_DEFAULTS
-    unknown = set(params or {}) - set(defaults)
-    if unknown:
-        raise SurveyError(f"unknown {method} parameter(s): {', '.join(sorted(unknown))}")
-    base = dict(defaults)
-    if preset is not None:
-        if preset not in PRESETS:
-            raise SurveyError(f"unknown ground preset {preset!r}; choose from {', '.join(sorted(PRESETS))}")
-        if method not in PRESETS[preset]:
-            raise SurveyError(f"preset {preset!r} is for {', '.join(PRESETS[preset])} only, not {method}")
-        base.update(PRESETS[preset][method])
-    chosen = {**base, **{k: v for k, v in (params or {}).items() if v is not None}}
+    chosen = filter_params(method, params, preset)
 
     rn = next((s for s in ingest.stats if s.name == "ReturnNumber"), None)
     normalise = rn is not None and rn.maximum == 0

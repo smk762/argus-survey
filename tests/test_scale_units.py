@@ -38,3 +38,17 @@ def test_ellipsoid_from_projjson_datum_or_ensemble() -> None:
     assert ellipsoid_of({"base_crs": {"datum_ensemble": {"ellipsoid": ell}}}) == (A, RF)
     with pytest.raises(SurveyError):
         ellipsoid_of({"base_crs": {"name": "x", "datum": {}}})
+
+
+def test_horizontal_projjson_unwraps_a_bound_horizontal_component(monkeypatch: pytest.MonkeyPatch) -> None:
+    from argus_survey import scale
+    from argus_survey.models import CrsRecord
+
+    projected = {"type": "ProjectedCRS", "name": "GDA94 / MGA zone 50"}
+    compound = {
+        "type": "CompoundCRS",
+        "components": [{"type": "BoundCRS", "source_crs": projected}, {"type": "VerticalCRS"}],
+    }
+    monkeypatch.setattr(scale, "run_json", lambda *a, **k: compound)
+    crs = CrsRecord.model_construct(definition="WKT", name="MGA94 + AHD")
+    assert scale.horizontal_projjson(crs, sink=None, step="t") is projected

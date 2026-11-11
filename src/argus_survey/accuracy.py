@@ -98,8 +98,8 @@ def group_of(description: str) -> str:
 def group_stats(
     rows: list[CheckResidual], group: str, checkpoint_rmse: float | None, target_class_cm: float | None = None
 ) -> AccuracyGroup:
-    mine = [r for r in rows if r.group == group and r.residual is not None]
-    used = [r.residual for r in mine if r.residual is not None]
+    mine = [(r.id, r.residual) for r in rows if r.group == group and r.residual is not None]
+    used = [e for _, e in mine]
     excluded = sum(1 for r in rows if r.group == group and r.residual is None)
     n = len(used)
     if n == 0:
@@ -119,8 +119,10 @@ def group_stats(
     std = math.sqrt(sum((e - mean) ** 2 for e in used) / (n - 1)) if n > 1 else None
     rmse = math.sqrt(sum(e * e for e in used) / n)
     product = math.sqrt(rmse * rmse + checkpoint_rmse * checkpoint_rmse) if checkpoint_rmse is not None else rmse
-    limit = BLUNDER_FACTOR * (target_class_cm / 100 if target_class_cm is not None else rmse)
-    blunders = [r.id for r in mine if r.residual is not None and limit > 0 and abs(r.residual) > limit]
+    # the class is an NVA target; a VVA has none (reported as found), so it is judged by its own RMSE
+    target = target_class_cm / 100 if target_class_cm is not None and group == "NVA" else rmse
+    limit = BLUNDER_FACTOR * target
+    blunders = [i for i, e in mine if limit > 0 and abs(e) > limit]
     return AccuracyGroup(
         group=group,  # type: ignore[arg-type]
         n=n,
@@ -139,12 +141,17 @@ def group_stats(
     )
 
 
-def statement_for(g: AccuracyGroup, target_class_cm: float | None) -> str:
-    """§7.16.1's wording for one tested group (NVA or VVA)."""
+def statement_for(g: AccuracyGroup, target_class_cm: float | None, *, nva_meets: bool | None = None) -> str:
+    """§7.16.1's wording for one tested group (NVA or VVA).
+
+    *nva_meets*: for a VVA statement, whether the NVA test passed. Only the NVA is pass/fail, so a VVA is
+    worded "tested to meet" a class only when the NVA met it.
+    """
     assert g.rmse_m is not None
     found = f"{100 * g.rmse_m:.1f} (cm)"
     name = "Non-Vegetated Vertical Accuracy (NVA)" if g.group == "NVA" else "Vegetated Vertical Accuracy (VVA)"
     area = f"{g.group} tested area"
+    fails = g.group == "NVA" and target_class_cm is not None and 100 * g.rmse_m > target_class_cm
     if not g.meets_minimum_count:
         produced = (
             f"This data set was produced to meet a {target_class_cm:g} (cm) RMSEV Vertical Positional Accuracy Class. "
@@ -156,10 +163,11 @@ def statement_for(g: AccuracyGroup, target_class_cm: float | None) -> str:
             f"thirty (30) checkpoints, this test was performed using ONLY {g.n} checkpoints. {produced}"
             f"The tested vertical positional accuracy was found to be RMSEV = {found} using the reduced number of "
             f"checkpoints in the {area}."
+            + (f" It does NOT meet the {target_class_cm:g} (cm) RMSEV Vertical Accuracy Class." if fails else "")
         )
-    if target_class_cm is None:
+    if target_class_cm is None or (g.group == "VVA" and not nva_meets):
         return f"This data set was tested as required by {STANDARD}. The {name} was found to be RMSEV = {found}."
-    if g.group == "NVA" and 100 * g.rmse_m > target_class_cm:
+    if fails:
         # the standard has no wording for a failed test
         return (
             f"This data set was tested against {STANDARD} for a {target_class_cm:g} (cm) RMSEV Vertical Accuracy "
@@ -257,9 +265,16 @@ def accuracy(
         statement_parts: list[str] = []
         if nva is None or nva.n == 0:
             notes.append("No non-vegetated check points fell on the surface: no NVA could be computed")
+        nva_meets = (
+            nva is not None
+            and nva.rmse_m is not None
+            and nva.meets_minimum_count  # a reduced-checkpoint NVA can't carry a "tested to meet" VVA
+            and target_class_cm is not None
+            and 100 * nva.rmse_m <= target_class_cm
+        )
         for g in (nva, vva):
             if g is not None and g.rmse_m is not None:
-                statement_parts.append(statement_for(g, target_class_cm))
+                statement_parts.append(statement_for(g, target_class_cm, nva_meets=nva_meets))
         if vva and vva.rmse_m is not None:
             statement_parts.append("(Edition 2 sets no VVA pass/fail; it is reported as found.)")
         for g in groups:
@@ -271,7 +286,11 @@ def accuracy(
             if g.excluded:
                 notes.append(f"{g.group}: {g.excluded} check point(s) excluded (outside the surface or in a void)")
             if g.blunders:
-                basis = f"the {target_class_cm:g}-cm target RMSE" if target_class_cm is not None else "the data RMSE"
+                basis = (
+                    f"the {target_class_cm:g}-cm target RMSE"
+                    if target_class_cm is not None and g.group == "NVA"
+                    else "the data RMSE"
+                )
                 notes.append(
                     f"{g.group}: {len(g.blunders)} residual(s) beyond 3 × {basis} ({', '.join(g.blunders[:10])}) — "
                     "investigate as blunders (§7.2); they are kept in the statistics"

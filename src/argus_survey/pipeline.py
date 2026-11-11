@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from argus_survey.contours import contours
-from argus_survey.ground import ground
+from argus_survey.ground import filter_params, ground
 from argus_survey.ingest import ingest
 from argus_survey.jobs import Job
 from argus_survey.qa import qa
@@ -33,6 +33,7 @@ def run_all(
     workers: int | None = None,
     echo: Callable[[str], Any] = print,
 ) -> Job:
+    filter_params(method, preset=preset)  # refuse a bad method/preset before the ingest, not after it
     rec = ingest(
         job,
         inputs,

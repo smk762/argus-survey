@@ -42,6 +42,8 @@ def horizontal_projjson(crs: CrsRecord, *, sink: CommandSink | None, step: str) 
         pj = pj["source_crs"]
     if pj.get("type") == "CompoundCRS":
         pj = pj["components"][0]
+        if pj.get("type") == "BoundCRS":  # a WKT1 TOWGS84 wrapper on the horizontal component, as crs.py unwraps
+            pj = pj["source_crs"]
     if pj.get("type") != "ProjectedCRS":
         raise SurveyError(f"{crs.name} is not a projected CRS; no grid scale factor applies")
     return pj
@@ -132,10 +134,14 @@ def scale_factors(
         op = crs_mod.select_operation(crs.definition, geo3d, bbox_lonlat=bbox, sink=sink, step=step)
         pipeline = crs_mod.pdal_coord_op(op, crs, target)
         out = run(["cct", "-d", "4", *pipeline.split()], step=step, sink=sink, stdin=f"{cx!r} {cy!r} {mean_height!r}\n")
-        parts = out.stdout.split()
-        if len(parts) < 3 or not math.isfinite(float(parts[2])):
+        # cct reports a failed point as a "# Record N TRANSFORMATION ERROR" line, whose third token is N
+        rows = [ln.split() for ln in out.stdout.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+        try:
+            ellipsoidal = float(rows[0][2]) if len(rows) == 1 and len(rows[0]) >= 3 else math.nan
+        except ValueError:
+            ellipsoidal = math.nan
+        if not math.isfinite(ellipsoidal):
             raise SurveyError("transforming the site centroid to ellipsoidal height failed")
-        ellipsoidal = float(parts[2])
         separation = ellipsoidal - mean_height
         op_name = op.name
     else:

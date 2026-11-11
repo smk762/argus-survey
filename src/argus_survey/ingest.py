@@ -47,6 +47,7 @@ from argus_survey.models import (
     SurveyError,
     TransformOp,
 )
+from argus_survey.scale import scale_factors
 from argus_survey.tools import CommandSink, pdal_pipeline, run, run_json, sha256_file
 
 log = structlog.get_logger(__name__)
@@ -416,10 +417,9 @@ def ingest(
         )
         z = next((st for st in stats if st.name == "Z"), None)
         try:
-            from argus_survey.scale import scale_factors
-
             record.scale_factors = scale_factors(target, out_summary.bounds, z.average if z else 0.0, sink=sink)
-        except SurveyError as exc:
+        except (SurveyError, KeyError, IndexError, ValueError) as exc:
+            # informational: an unexpected PROJJSON shape must not throw away a COPC that is already built
             job.warn(f"Grid-to-ground scale factor not computed: {exc}")
         job.sidecar.crs = target
         job.sidecar.ingest = record
@@ -435,7 +435,7 @@ def ingest(
         )
         _warnings(job, target, record)
         e57 = [f.name for f in files if reader_type(f) == "readers.e57"]
-        if e57 and s_srs is not None:
+        if e57:  # resolve_source_crs already refused E57 without --s-srs
             job.warn(
                 f"E57 declares no CRS; {', '.join(e57[:3])} {'is' if len(e57) == 1 else 'are'} taken to be in "
                 f"{source.name} as stated by --s-srs: confirm the scans were registered to that grid, not left in "
@@ -519,6 +519,7 @@ def _reset(job: Job) -> None:
     job.sidecar.ingest = None
     job.sidecar.crs = None
     job.sidecar.inputs = []
+    job.sidecar.exports = []  # their files went with the products above
     job.sidecar.warnings = []
     job.sidecar.steps_done = [s for s in job.sidecar.steps_done if s == STEP]
     job.save()

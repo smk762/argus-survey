@@ -117,3 +117,31 @@ def test_statements_follow_section_7_16_1() -> None:
     assert "ONLY 10 checkpoints" in s and "produced to meet a 10 (cm) RMSEV Vertical Positional Accuracy Class" in s
     assert s.endswith("using the reduced number of checkpoints in the VVA tested area.")
     assert "produced to meet" not in statement_for(few, None)
+    assert "does NOT meet" not in s  # VVA has no pass/fail
+
+    # a failed NVA with too few checkpoints still says it failed
+    few_nva = group_stats(_rows([0.05, -0.05] * 5), "NVA", None)  # RMSE 5 cm, n = 10
+    assert "does NOT meet the 4 (cm)" in statement_for(few_nva, 4)
+    assert "does NOT meet" not in statement_for(few_nva, 10)
+
+    # a VVA is "tested to meet" a class only when the NVA met it
+    vva = group_stats(_rows([0.05, -0.05] * 15, "VVA"), "VVA", None)
+    assert statement_for(vva, 10, nva_meets=True).startswith("This data set was tested to meet")
+    assert statement_for(vva, 10, nva_meets=False).startswith("This data set was tested as required by")
+
+
+def test_vva_blunders_use_their_own_rmse_not_the_nva_class() -> None:
+    # 8 cm residuals are "beyond 3 × 2 cm" for an NVA class, but a VVA has no target: only its own RMSE counts
+    res = [0.08, -0.08] * 15
+    assert group_stats(_rows(res, "VVA"), "VVA", None, target_class_cm=2).blunders == []
+    assert len(group_stats(_rows(res), "NVA", None, target_class_cm=2).blunders) == 30
+
+
+def test_ground_filter_params_refused_without_a_job() -> None:
+    from argus_survey.ground import filter_params
+
+    assert filter_params("smrf", preset="stockpile")["slope"] == 1.0
+    with pytest.raises(SurveyError, match="unknown ground method"):
+        filter_params("pmf")
+    with pytest.raises(SurveyError, match="only, not csf"):
+        filter_params("csf", preset="stockpile")

@@ -68,6 +68,11 @@ def export_points(
         name = f"points.{fmt}"
         out = job.path(name)
         out.unlink(missing_ok=True)
+        # the previous export of this format is gone from disk: forget it now, so a failed run leaves no stale record
+        job.sidecar.exports = [e for e in job.sidecar.exports if e.format != fmt]
+        for kind in (f"points_{fmt}", f"points_{fmt}_notes"):
+            if (old := job.sidecar.products.pop(kind, None)) is not None:
+                job.path(old.path).unlink(missing_ok=True)
         if fmt == "las":
             stages.append(
                 {
@@ -116,7 +121,7 @@ def export_points(
             f"points_{fmt}", name, step=STEP, description=f"Point cloud for ReCap ({fmt.upper()})", count=count
         )
         job.add_product(f"points_{fmt}_notes", notes_name, step=STEP, description=f"{fmt.upper()} export notes")
-        job.sidecar.exports = [e for e in job.sidecar.exports if e.format != fmt] + [record]
+        job.sidecar.exports.append(record)
         job.save()
         if fmt == "e57":
             job.warn(f"points.e57 carries no CRS: its coordinates are {crs.name}; see {notes_name}")
