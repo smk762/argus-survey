@@ -16,6 +16,7 @@ from typing import Annotated
 import structlog
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from argus_survey import __version__, config
@@ -67,9 +68,9 @@ def main(
 
 
 def fail(exc: SurveyError) -> typer.Exit:
-    err.print(f"[bold red]error:[/] {exc}")
+    err.print(f"[bold red]error:[/] {escape(str(exc))}")
     if isinstance(exc, ToolError) and exc.stderr_tail:
-        err.print(f"[dim]{exc.stderr_tail}[/]")
+        err.print(f"[dim]{escape(exc.stderr_tail)}[/]")
     return typer.Exit(EXIT_REFUSED)
 
 
@@ -225,7 +226,7 @@ def ingest(
         )
     _print_crs(j.sidecar.crs, "Job CRS")
     for w in j.sidecar.warnings:
-        console.print(f"[yellow]warning:[/] {w}")
+        console.print(f"[yellow]warning:[/] {escape(w)}")
 
 
 @app.command()
@@ -282,7 +283,7 @@ WorkersOpt = Annotated[
 
 def _warnings(j: Job, before: int) -> None:
     for w in j.sidecar.warnings[before:]:
-        console.print(f"[yellow]warning:[/] {w}")
+        console.print(f"[yellow]warning:[/] {escape(w)}")
 
 
 @app.command()
