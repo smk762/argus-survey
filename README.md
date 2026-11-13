@@ -21,7 +21,7 @@ It is built to be judged on **correct datums, honest numbers and reproducible ou
 First audience: **Western Australian civil surveyors** (MGA2020 zones 49–51, PCG2020 and the other WA
 LSG2020 grids, AHD via AUSGeoid2020). Nothing is hard-coded to WA; other regions work the same way.
 
-![The viewer: hillshade, contours and coverage on the map; the classified cloud streamed from COPC](docs/img/viewer.png)
+![The viewer: hillshade, contours and coverage on the map; the classified cloud streamed from COPC](https://raw.githubusercontent.com/smk762/argus-survey/main/docs/img/viewer.png)
 
 ## Five-minute start
 
@@ -183,7 +183,7 @@ need it to exist. The response is an SSE stream of `start`, `step`, `command`, `
 step's result, product kinds, warnings) or `error`.
 
 The request bodies, `HealthInfo`, the SSE payloads and `job.json` are all in one JSON Schema,
-[`schema/survey-wire.schema.json`](schema/survey-wire.schema.json) (regenerate with `argus-survey schema`);
+[`schema/survey-wire.schema.json`](https://github.com/smk762/argus-survey/blob/main/schema/survey-wire.schema.json) (regenerate with `argus-survey schema`);
 generate client types from it rather than from this table.
 
 The viewer (`/viewer`) shows the hillshade, surfaces, density, change, contours and coverage on a map, the
@@ -209,9 +209,9 @@ make test         # pure-Python tests here; tool tests skip without PDAL
 make test-docker  # the full suite in the image, tools required (what CI runs)
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the code map and conventions, [docs/runbook.md](docs/runbook.md) for
-operations, [docs/data-sources.md](docs/data-sources.md) for public data and
-[docs/atlas-showcase.md](docs/atlas-showcase.md) for turning a survey DTM into an argus-atlas map.
+See [CLAUDE.md](https://github.com/smk762/argus-survey/blob/main/CLAUDE.md) for the code map and conventions, [docs/runbook.md](https://github.com/smk762/argus-survey/blob/main/docs/runbook.md) for
+operations, [docs/data-sources.md](https://github.com/smk762/argus-survey/blob/main/docs/data-sources.md) for public data and
+[docs/atlas-showcase.md](https://github.com/smk762/argus-survey/blob/main/docs/atlas-showcase.md) for turning a survey DTM into an argus-atlas map.
 Follow-ups are [GitHub issues](https://github.com/smk762/argus-survey/issues) — Autodesk interoperability (LandXML, DXF, ReCap) first.
 
 Part of the [Argus suite](https://github.com/smk762?tab=repositories&q=argus). MIT licence.

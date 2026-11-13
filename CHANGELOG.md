@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-13
+
+First release, published to PyPI and GHCR.
+
 ### Changed
 - Accuracy follows the text of ASPRS Positional Accuracy Standards, Edition 2, Version 2 (2024): §7.16.1 statement wording (with the reduced-checkpoint statement below 30 points), min/max/median (§7.16), bias flagged above 25 % of the target RMSE and blunders beyond 3 × it (§7.2), a horizontal-accuracy note for photogrammetry (§7.6) (#3).
 
