@@ -200,6 +200,12 @@ projsync --target-dir ./.geo/share/proj --file au_ga_AUSGeoid2020_20180201.tif  
 make install && uv run argus-survey doctor
 ```
 
+From PyPI instead of a checkout: `pip install argus-survey` gives the CLI, and `pip install "argus-survey[server]"`
+adds the API, the viewer and `argus-survey schema`. The package only calls `pdal`, `gdal`, `projinfo` and friends
+on `PATH`. pip can't install those, so set up the environment above (or the
+[`env/geo.yml`](https://github.com/smk762/argus-survey/blob/main/env/geo.yml) stack) first, then check with
+`argus-survey doctor`.
+
 ## Develop
 
 ```bash

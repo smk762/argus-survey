@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `pip install argus-survey` now gives a working CLI: `typer` and `rich` are base dependencies. In 0.1.0 they were only in the `cli` extra, so the installed `argus-survey` command failed with `No module named 'typer'`. `argus-survey[cli]` still works.
+- CLI errors, tool stderr and warnings are printed literally. They went through Rich markup, so bracketed text such as `[server]` in an install hint, or PDAL's `[readers.las]`, was dropped or could raise a markup error.
+
+### Added
+- README: installing from PyPI, and the toolchain it needs.
+
 ## [0.1.0] - 2026-11-13
 
 First release, published to PyPI and GHCR.
