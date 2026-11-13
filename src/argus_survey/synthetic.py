@@ -191,7 +191,10 @@ def write_scene(
     srs: str | None = "EPSG:7850+5711",
     sink: CommandSink | None = None,
 ) -> Path:
-    """Write *scene* to a LAS/LAZ file at *path* with CRS *srs* (``None``: no CRS in the file)."""
+    """Write *scene* to a LAS/LAZ file at *path* with CRS *srs* (``None``: no CRS in the file).
+
+    A ``.e57`` path writes E57 (double precision; E57 has no CRS, so *srs* is ignored, and no return numbering).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     columns = COLUMNS + (RGB if scene.photogrammetry else [])
     with tempfile.TemporaryDirectory(prefix="argus-survey-synth-") as tmp:
@@ -215,6 +218,9 @@ def write_scene(
         }
         if srs is not None:
             writer_stage["a_srs"] = srs
+        if path.suffix.lower() == ".e57":
+            # single precision (the writer's default) rounds an MGA northing to ~0.5 m
+            writer_stage = {"type": "writers.e57", "filename": str(path), "double_precision": True}
         pdal_pipeline([{"type": "readers.text", "filename": str(csv_path)}, writer_stage], step="synth", sink=sink)
     return path
 

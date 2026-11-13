@@ -42,10 +42,10 @@ def test_newer_sidecar_says_so(tmp_path: Path) -> None:
     JobStore(tmp_path).open("x", create=True)
     path = tmp_path / "x" / "job.json"
     data = json.loads(path.read_text())
-    data.update(package_version="9.9.9", exports=[])
+    data.update(package_version="9.9.9", from_a_later_release=[])
     data["ground"] = None
     path.write_text(json.dumps(data))
-    with pytest.raises(SurveyError, match=r"newer argus-survey \(9\.9\.9; .*\(exports\)"):
+    with pytest.raises(SurveyError, match=r"newer argus-survey \(9\.9\.9; .*\(from_a_later_release\)"):
         JobStore(tmp_path).open("x")
     data["created_at"] = "not a date"  # a genuinely broken file still says invalid
     path.write_text(json.dumps(data))

@@ -62,6 +62,13 @@
     "AccuracyGroup": {
       "additionalProperties": false,
       "properties": {
+        "blunders": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blunders",
+          "type": "array"
+        },
         "excluded": {
           "title": "Excluded",
           "type": "integer"
@@ -85,6 +92,18 @@
           ],
           "title": "Max Abs M"
         },
+        "max_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max M"
+        },
         "mean_m": {
           "anyOf": [
             {
@@ -96,9 +115,33 @@
           ],
           "title": "Mean M"
         },
+        "median_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median M"
+        },
         "meets_minimum_count": {
           "title": "Meets Minimum Count",
           "type": "boolean"
+        },
+        "min_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min M"
         },
         "n": {
           "title": "N",
@@ -1247,6 +1290,148 @@
       "title": "ErrorEvent",
       "type": "object"
     },
+    "ExportBody": {
+      "additionalProperties": false,
+      "properties": {
+        "points": {
+          "default": "las",
+          "enum": [
+            "las",
+            "e57"
+          ],
+          "title": "Points",
+          "type": "string"
+        },
+        "polygon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon"
+        },
+        "polygon_srs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon Srs"
+        },
+        "thin": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thin"
+        }
+      },
+      "title": "ExportBody",
+      "type": "object"
+    },
+    "ExportRecord": {
+      "additionalProperties": false,
+      "description": "A point-cloud deliverable for ReCap / Civil 3D (``export --points``).",
+      "properties": {
+        "classes": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Classes",
+          "type": "object"
+        },
+        "crop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop"
+        },
+        "crs": {
+          "title": "Crs",
+          "type": "string"
+        },
+        "crs_in_file": {
+          "title": "Crs In File",
+          "type": "boolean"
+        },
+        "crs_name": {
+          "title": "Crs Name",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "las",
+            "e57"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "points": {
+          "title": "Points",
+          "type": "integer"
+        },
+        "source": {
+          "enum": [
+            "classified",
+            "copc"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "thin_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thin M"
+        }
+      },
+      "required": [
+        "format",
+        "path",
+        "source",
+        "points",
+        "crs",
+        "crs_name",
+        "crs_in_file",
+        "notes"
+      ],
+      "title": "ExportRecord",
+      "type": "object"
+    },
     "FileRef": {
       "additionalProperties": false,
       "description": "A file pinned by digest. ``path`` is relative to the job dir for products, absolute for inputs.",
@@ -1370,6 +1555,18 @@
           },
           "title": "Params",
           "type": "object"
+        },
+        "preset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset"
         }
       },
       "title": "GroundBody",
@@ -1423,6 +1620,18 @@
         "points": {
           "title": "Points",
           "type": "integer"
+        },
+        "preset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset"
         },
         "reset_classes": {
           "title": "Reset Classes",
@@ -1623,6 +1832,17 @@
           "title": "Scale",
           "type": "number"
         },
+        "scale_factors": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScaleFactors"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "source_crs": {
           "$ref": "#/$defs/CrsRecord"
         },
@@ -1631,6 +1851,7 @@
           "enum": [
             "lidar",
             "photogrammetry",
+            "terrestrial",
             "unknown"
           ],
           "title": "Source Type",
@@ -1843,6 +2064,13 @@
             }
           ],
           "default": null
+        },
+        "exports": {
+          "items": {
+            "$ref": "#/$defs/ExportRecord"
+          },
+          "title": "Exports",
+          "type": "array"
         },
         "ground": {
           "anyOf": [
@@ -2240,6 +2468,7 @@
           "enum": [
             "lidar",
             "photogrammetry",
+            "terrestrial",
             "unknown"
           ],
           "title": "Source Type",
@@ -2489,6 +2718,18 @@
           "default": null,
           "title": "Operation"
         },
+        "preset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset"
+        },
         "res": {
           "default": 0.5,
           "exclusiveMinimum": 0,
@@ -2524,6 +2765,131 @@
         "inputs"
       ],
       "title": "RunBody",
+      "type": "object"
+    },
+    "ScaleFactors": {
+      "additionalProperties": false,
+      "description": "Grid-to-ground at the site centroid: ground distance = grid distance / combined (see ``scale.py``).",
+      "properties": {
+        "combined": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Combined"
+        },
+        "convergence_deg": {
+          "title": "Convergence Deg",
+          "type": "number"
+        },
+        "easting": {
+          "title": "Easting",
+          "type": "number"
+        },
+        "ellipsoidal_height_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ellipsoidal Height M"
+        },
+        "geoid_separation_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Geoid Separation M"
+        },
+        "height_factor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Height Factor"
+        },
+        "height_m": {
+          "title": "Height M",
+          "type": "number"
+        },
+        "latitude": {
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "title": "Longitude",
+          "type": "number"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "northing": {
+          "title": "Northing",
+          "type": "number"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation"
+        },
+        "point_scale": {
+          "title": "Point Scale",
+          "type": "number"
+        },
+        "point_scale_max": {
+          "title": "Point Scale Max",
+          "type": "number"
+        },
+        "point_scale_min": {
+          "title": "Point Scale Min",
+          "type": "number"
+        },
+        "radius_m": {
+          "title": "Radius M",
+          "type": "number"
+        }
+      },
+      "required": [
+        "easting",
+        "northing",
+        "longitude",
+        "latitude",
+        "height_m",
+        "ellipsoidal_height_m",
+        "geoid_separation_m",
+        "point_scale",
+        "point_scale_min",
+        "point_scale_max",
+        "convergence_deg",
+        "radius_m",
+        "height_factor",
+        "combined",
+        "method"
+      ],
+      "title": "ScaleFactors",
       "type": "object"
     },
     "StartEvent": {
@@ -2673,6 +3039,11 @@
           "default": true,
           "title": "Chm",
           "type": "boolean"
+        },
+        "chm_method": {
+          "default": "max",
+          "title": "Chm Method",
+          "type": "string"
         },
         "dsm": {
           "default": true,
@@ -2973,6 +3344,18 @@
           "title": "Allow Voids",
           "type": "boolean"
         },
+        "combined_scale_factor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Combined Scale Factor"
+        },
         "kind": {
           "enum": [
             "stockpile",
@@ -3103,6 +3486,54 @@
           ],
           "default": null,
           "title": "Boundary Samples"
+        },
+        "ground_above_m3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ground Above M3"
+        },
+        "ground_area_m2": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ground Area M2"
+        },
+        "ground_below_m3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ground Below M3"
+        },
+        "ground_net_m3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ground Net M3"
         },
         "name": {
           "title": "Name",

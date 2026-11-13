@@ -79,6 +79,11 @@ def test_stockpile_volume_from_points(epochs, tmp_path) -> None:  # type: ignore
     assert z.above_m3 == pytest.approx(s1.cone_volume, rel=0.03), z
     assert z.base_fit_rms_m < 0.05
     assert json.loads(j1.product_path("volume").read_text())["zones"][0]["name"] == "ROM pad 1"
+    # grid → ground: MGA zone 50 west of the central meridian shrinks grid lengths (k < 1), so ground is larger
+    c = r.combined_scale_factor
+    assert c is not None and c == j1.sidecar.ingest.scale_factors.combined and c < 1
+    assert z.ground_above_m3 == pytest.approx(z.above_m3 / c**2, abs=2e-3) and z.ground_above_m3 > z.above_m3
+    assert z.ground_area_m2 == pytest.approx(z.area_m2 / c**2, abs=2e-3)
 
 
 def test_change_matches_injected_growth(epochs, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -142,7 +147,10 @@ def test_accuracy_rmse_matches_injected_noise(epochs, tmp_path) -> None:  # type
     assert 0.035 < nva.rmse_data_m < 0.07, nva  # ≈ the 5 cm injected into the check heights
     assert nva.rmse_m == pytest.approx(math.sqrt(nva.rmse_data_m**2 + 0.01**2), abs=1e-4)
     assert not vva.pass_fail_applies and not vva.meets_minimum_count
-    assert "meets" in r.statement and "95" not in r.statement
+    assert r.statement.startswith("This data set was tested to meet ASPRS") and "95" not in r.statement
+    assert "Version 2 (2024)" in r.statement and "for a 10 (cm) RMSEV Vertical Accuracy Class" in r.statement
+    assert "ONLY 10 checkpoints" in r.statement  # VVA has 10: §7.16.1's reduced-checkpoint wording
+    assert nva.min_m <= nva.median_m <= nva.max_m
     assert any("at least 30" in n for n in r.notes)
     with j1.product_path("residuals").open() as fh:
         assert len(list(csv.DictReader(fh))) == 50

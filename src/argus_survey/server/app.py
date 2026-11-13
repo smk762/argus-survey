@@ -50,6 +50,7 @@ from argus_survey.models import (
     DoneEvent,
     EmptyBody,
     ErrorEvent,
+    ExportBody,
     GroundBody,
     HealthInfo,
     IngestBody,
@@ -67,7 +68,7 @@ from argus_survey.tools import ToolError, versions
 PROCESS_REFUSAL = "processing is disabled on this host (set SURVEY_ALLOW_PROCESS=1 to enable POST /jobs/{id}/{step})"
 STATIC = Path(__file__).parent / "static"
 INPUT_KINDS = {
-    "points": (".las", ".laz"),
+    "points": (".las", ".laz", ".e57"),
     "vectors": (".geojson", ".json", ".gpkg", ".shp", ".fgb"),
     "rasters": (".tif", ".tiff", ".vrt"),
     "tables": (".csv", ".txt"),
@@ -226,6 +227,7 @@ def create_app(
         from argus_survey.accuracy import accuracy
         from argus_survey.change import change
         from argus_survey.contours import contours
+        from argus_survey.export import export_points
         from argus_survey.ground import ground
         from argus_survey.ingest import ingest
         from argus_survey.pipeline import run_all
@@ -328,13 +330,20 @@ def create_app(
             "qa": (QaBody, lambda j, b: qa(j, density_res=b.density_res, min_density=b.min_density), False),
             "ground": (
                 GroundBody,
-                lambda j, b: ground(j, method=b.method, params=b.params, keep_classes=b.keep_classes),
+                lambda j, b: ground(j, method=b.method, params=b.params, preset=b.preset, keep_classes=b.keep_classes),
                 False,
             ),
             "surfaces": (
                 SurfacesBody,
                 lambda j, b: surfaces(
-                    j, res=b.res, dtm=b.dtm, dsm=b.dsm, chm=b.chm, fill_voids=b.fill_voids, dsm_method=b.dsm_method
+                    j,
+                    res=b.res,
+                    dtm=b.dtm,
+                    dsm=b.dsm,
+                    chm=b.chm,
+                    fill_voids=b.fill_voids,
+                    dsm_method=b.dsm_method,
+                    chm_method=b.chm_method,
                 ),
                 False,
             ),
@@ -368,6 +377,13 @@ def create_app(
                 False,
             ),
             "profile": (ProfileBody, profile_run, False),
+            "export": (
+                ExportBody,
+                lambda j, b: export_points(
+                    j, b.points, polygon=opt_path(b.polygon, "polygon"), polygon_srs=b.polygon_srs, thin=b.thin
+                ),
+                False,
+            ),
             "report": (EmptyBody, lambda j, _b: report(j), False),
             "run": (
                 RunBody,
@@ -383,6 +399,7 @@ def create_app(
                     crop=opt_path(b.crop, "crop"),
                     crop_srs=b.crop_srs,
                     method=b.method,
+                    preset=b.preset,
                     fill_voids=b.fill_voids,
                     echo=lambda _m: None,
                 ),

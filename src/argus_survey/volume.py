@@ -411,6 +411,15 @@ def volume(
 
 
 def _store(job: Job, report: VolumeReport, name: str, kind: str, description: str) -> None:
+    sf = job.sidecar.ingest.scale_factors if job.sidecar.ingest else None
+    if sf is not None and sf.combined is not None:
+        c = sf.combined
+        report.combined_scale_factor = c
+        for z in report.zones:
+            z.ground_area_m2 = round(z.area_m2 / c**2, 3)
+            z.ground_above_m3 = round(z.above_m3 / c**2, 3)
+            z.ground_below_m3 = round(z.below_m3 / c**2, 3)
+            z.ground_net_m3 = round(z.net_m3 / c**2, 3)
     job.path(name).write_text(report.model_dump_json(indent=2), encoding="utf-8")
     job.sidecar.volumes.append(report)
     job.add_product(kind, name, step=STEP if kind == "volume" else kind, description=description)
