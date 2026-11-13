@@ -418,7 +418,7 @@ def ingest(
         z = next((st for st in stats if st.name == "Z"), None)
         try:
             record.scale_factors = scale_factors(target, out_summary.bounds, z.average if z else 0.0, sink=sink)
-        except (SurveyError, KeyError, IndexError, ValueError) as exc:
+        except (SurveyError, KeyError, IndexError, ValueError, TypeError, AttributeError) as exc:
             # informational: an unexpected PROJJSON shape must not throw away a COPC that is already built
             job.warn(f"Grid-to-ground scale factor not computed: {exc}")
         job.sidecar.crs = target

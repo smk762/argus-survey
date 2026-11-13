@@ -52,3 +52,10 @@ def test_horizontal_projjson_unwraps_a_bound_horizontal_component(monkeypatch: p
     monkeypatch.setattr(scale, "run_json", lambda *a, **k: compound)
     crs = CrsRecord.model_construct(definition="WKT", name="MGA94 + AHD")
     assert scale.horizontal_projjson(crs, sink=None, step="t") is projected
+
+
+def test_ellipsoid_defined_by_semi_minor_axis() -> None:
+    """Clarke 1866 and Airy 1830 are defined by a and b in EPSG; PROJJSON then has no inverse_flattening."""
+    a, b = 6378206.4, 6356583.8
+    got = ellipsoid_of({"base_crs": {"datum": {"ellipsoid": {"semi_major_axis": a, "semi_minor_axis": b}}}})
+    assert got == (a, pytest.approx(294.978698214))

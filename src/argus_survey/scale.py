@@ -54,10 +54,12 @@ def ellipsoid_of(projected: dict[str, Any]) -> tuple[float, float]:
     base = projected["base_crs"]
     datum = base.get("datum") or base.get("datum_ensemble") or {}
     ell = datum.get("ellipsoid") or {}
-    a = ell.get("semi_major_axis")
+    a, b = (
+        v.get("value") if isinstance(v, dict) else v for v in (ell.get("semi_major_axis"), ell.get("semi_minor_axis"))
+    )
     rf = ell.get("inverse_flattening")
-    if isinstance(a, dict):
-        a = a.get("value")
+    if rf is None and a is not None and b is not None and float(a) > float(b):
+        rf = float(a) / (float(a) - float(b))  # ellipsoids defined by a and b (Clarke 1866, Airy 1830)
     if a is None or rf is None:
         raise SurveyError(f"can't read the ellipsoid of {base.get('name', '?')}")
     return float(a), float(rf)

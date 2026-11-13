@@ -183,10 +183,16 @@ def change(
             desc = f"{surface.upper()} change against {against.id}"
             dod_desc = f"{surface.upper()} of difference (later − earlier)"
             lod_desc = f"{surface.upper()} DoD with |Δ| < {lod_m:.3f} m set to 0 (no detectable change)"
-            for suffix in (f"_{surface}", ""):  # per surface, and the latest run under the plain kinds
-                job.add_product(f"change{suffix}", report_name, step=STEP, description=desc)
-                job.add_product(f"dod{suffix}", dod, step=STEP, description=dod_desc)
-                job.add_product(f"dod{suffix}_lod" if suffix else "dod_lod", dod_lod, step=STEP, description=lod_desc)
+            outputs = (
+                ("change", f"change_{surface}", report_name, desc),
+                ("dod", f"dod_{surface}", dod, dod_desc),
+                ("dod_lod", f"dod_{surface}_lod", dod_lod, lod_desc),
+            )
+            for kind, per_surface, name, description in outputs:
+                # per surface, and the latest run under the plain kind; the file is hashed once
+                product = job.add_product(per_surface, name, step=STEP, description=description)
+                job.sidecar.products[kind] = product.model_copy(update={"kind": kind})
+            job.save()
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return report

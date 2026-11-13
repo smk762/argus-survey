@@ -96,10 +96,14 @@ def export_points(
         meta = pdal_pipeline(stages, step=STEP, sink=sink, stream=True)
         cls = next((s for s in parse_stats(meta) if s.name == "Classification"), None)
         count = cls.count if cls else 0
+        refusal = None
         if count == 0:
-            raise SurveyError("nothing to export: the crop/thinning left no points")
-        if polygon is None and thin is None and expected is not None and count != expected:
-            raise SurveyError(f"exported {count} points but the job holds {expected}; refusing a partial export")
+            refusal = "nothing to export: the crop/thinning left no points"
+        elif polygon is None and thin is None and expected is not None and count != expected:
+            refusal = f"exported {count} points but the job holds {expected}; refusing a partial export"
+        if refusal is not None:
+            out.unlink(missing_ok=True)  # a refused export must not leave a deliverable-looking file behind
+            raise SurveyError(refusal)
 
         classes = {int(k): v for k, v in (cls.counts if cls else {}).items()}
         notes_name = f"points_{fmt}_notes.txt"

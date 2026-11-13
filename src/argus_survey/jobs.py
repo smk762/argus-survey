@@ -74,12 +74,14 @@ def load_sidecar(job_dir: Path) -> JobSidecar:
         return JobSidecar.model_validate_json(text)
     except ValidationError as exc:
         errors = exc.errors()
-        if errors and all(e["type"] == "extra_forbidden" for e in errors):
-            # every problem is a field this version doesn't know: the job was made by a newer argus-survey
-            try:
-                made_by = json.loads(text).get("package_version", "?")
-            except ValueError:
-                made_by = "?"
+        try:
+            doc = json.loads(text)
+            made_by = str(doc.get("package_version", "?")) if isinstance(doc, dict) else "?"
+        except ValueError:
+            made_by = "?"
+        # every problem is a field this version doesn't know, and another version wrote it: a newer argus-survey
+        # (a file this very version wrote with an unknown field is hand-edited or corrupt, not "newer")
+        if errors and made_by != __version__ and all(e["type"] == "extra_forbidden" for e in errors):
             fields = ", ".join(".".join(str(p) for p in e["loc"]) for e in errors)
             raise SurveyError(
                 f"{path} was written by a newer argus-survey ({made_by}; this is {__version__}): "
