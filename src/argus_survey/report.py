@@ -436,10 +436,12 @@ def section_volumes(job: Job) -> str:
             title = {"stockpile": "Stockpiles", "cutfill": "Cut and fill", "change": "Change"}[v.kind]
             out.append(f"<h3>{e(title)}</h3>{_volume_table(v)}")
         out.append(cmd_links(s.commands, "volume") + cmd_links(s.commands, "cutfill"))
-    c = s.change
-    if c:
+    changes = s.changes or ([s.change] if s.change else [])  # older sidecars keep only the latest
+    if changes:
+        out.append("<h2>Change between epochs</h2>")
+    for c in changes:
         out.append(
-            "<h2>Change between epochs</h2>"
+            f"<h3>{e(c.surface.upper())}</h3>"
             + kv(
                 [
                     (
@@ -463,6 +465,7 @@ def section_volumes(job: Job) -> str:
                 ]
             )
         )
+        lod_kind = f"dod_{c.surface}_lod" if f"dod_{c.surface}_lod" in s.products else "dod_lod"
         ramp = [
             (-1.0, (33, 102, 172)),
             (-c.lod_m, (146, 197, 222)),
@@ -472,10 +475,11 @@ def section_volumes(job: Job) -> str:
         ]
         out.append(
             figure(
-                thumbnail(job, "dod_lod", color=ramp),
+                thumbnail(job, lod_kind, color=ramp),
                 "DoD beyond the LoD: red = gain, blue = loss, white = no detectable change (colours saturate at ±1 m)",
             )
         )
+    if changes:
         out.append(cmd_links(s.commands, "change"))
     return "\n".join(out)
 

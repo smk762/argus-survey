@@ -1803,6 +1803,13 @@
           ],
           "default": null
         },
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/ChangeReport"
+          },
+          "title": "Changes",
+          "type": "array"
+        },
         "commands": {
           "items": {
             "$ref": "#/$defs/CommandRecord"

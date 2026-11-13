@@ -33,11 +33,44 @@ MIN_TILE = 50.0  # metres; smaller tiles mean more buffer overhead than they sav
 EDGE = 0.01  # metres past the recorded bounds; far more than their rounding, far less than any buffer
 
 
-def default_workers() -> int:
+# Measured on a 102M-point drone LiDAR cloud (TERN WAACOO0001, 15 tiles of ~70 m + 27 m buffer):
+# one SMRF tile peaked at 3.5 GiB RSS and untwine at 1.2 GiB; 4 workers ran ground 3.1x faster than 1.
+WORKER_BYTES = 4 << 30  # per parallel tile at TARGET_POINTS, with headroom
+RESERVE_BYTES = 2 << 30  # untwine, the Python process, page cache
+MAX_WORKERS = 4
+
+
+def memory_limit() -> int | None:
+    """Bytes this process may use: the cgroup v2 limit if one is set (containers), else physical RAM."""
+    try:
+        raw = Path("/sys/fs/cgroup/memory.max").read_text().strip()
+        if raw.isdigit():
+            return int(raw)
+    except OSError:
+        pass
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def _cpus() -> int:
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # not Linux
+        return os.cpu_count() or 1
+
+
+def default_workers(*, memory: int | None = None, cpus: int | None = None) -> int:
+    """``SURVEY_WORKERS`` if set, else ≤ 4 tiles at once, as many as the CPUs and memory allow."""
     env = os.environ.get("SURVEY_WORKERS")
     if env and env.isdigit() and int(env) > 0:
         return int(env)
-    return max(1, min(4, os.cpu_count() or 1))
+    n = min(MAX_WORKERS, cpus or _cpus())
+    mem = memory if memory is not None else memory_limit()
+    if mem is not None:
+        n = min(n, (mem - RESERVE_BYTES) // WORKER_BYTES)
+    return max(1, n)
 
 
 @dataclass(frozen=True)

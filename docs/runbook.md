@@ -31,7 +31,7 @@ log; `ingest --force` starts a job over.
 | `SURVEY_JOBS_DIR` | `/data/jobs` in the image | job directories |
 | `SURVEY_ALLOW_PROCESS` | off | `1/true/yes/on` enables `POST /jobs/{id}/{step}`; `/health.read_only` reports it |
 | `SURVEY_CORS_ORIGINS` | `http://localhost:3000` | origins for `serve --cors` |
-| `SURVEY_WORKERS` | min(4, CPUs) | parallel tiles for outlier/ground/height-above-ground |
+| `SURVEY_WORKERS` | min(4, CPUs, (RAM − 2 GiB) / 4 GiB) | parallel tiles for outlier/ground/height-above-ground; RAM is the container's cgroup limit when set |
 | `PROJ_NETWORK` | `OFF` | forced off for every tool call: no grid is ever fetched mid-job |
 
 Compose reads host paths and UID/GID from `.env` (see `.env.example`).
@@ -85,7 +85,10 @@ Every refusal is a sentence telling you what to do. The common ones:
 
 Ingest and surface rasterisation stream (bounded memory). Outlier flagging, SMRF/CSF and height-above-ground
 run on tiles of about 8 million points with a buffer (25 m or 1.5 × the SMRF window for ground), in
-`SURVEY_WORKERS` parallel processes. Budget about 1.5 GB RAM per worker. Disk: the COPC is about the size of
+`SURVEY_WORKERS` parallel processes. Budget about 4 GiB RAM per worker plus 2 GiB: on a 102M-point drone LiDAR
+cloud (15 tiles of ~70 m with a 27 m buffer) the heaviest SMRF tile peaked at 3.5 GiB RSS and the untwine merge at
+1.2 GiB. The default worker count respects that budget (one worker below 10 GiB). Measured on 16 cores: 4 workers ran
+ground 3.1×, qa 2.7× and surfaces 2.0× faster than 1 (ground 816 s vs 2548 s). Disk: the COPC is about the size of
 the input LAZ; ground classification writes a second copy.
 
 ## Check the toolchain

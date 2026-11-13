@@ -354,4 +354,20 @@ def qa(job: Job, *, density_res: float = 1.0, min_density: float | None = None, 
         job.add_product("gaps", "gaps.geojson", step=STEP, description=f"Cells below {threshold:.2f} pts/m²")
         if gaps.percent_of_coverage > 5:
             job.warn(f"{gaps.percent_of_coverage:.1f}% of the covered area is below the density threshold ({rule})")
+        if ground_only(stats.get("Classification")):
+            # seen on a real delivery (Floreat 2022): its DSM was a DTM, and a DSM DoD reported the
+            # filtered-out trees and roofs as 9,800 m³ of "loss"
+            job.warn(
+                "The delivery is ground-only: every point is already class 2 (ground), apart from any noise. "
+                "The DSM and CHM can't show buildings or vegetation, and a DSM comparison with another epoch "
+                "will report them as change; compare DTMs"
+            )
     return report
+
+
+def ground_only(delivered: DimStats | None) -> bool:
+    """True when the source's own classes are all ground (2), allowing noise (7, 18)."""
+    if delivered is None:
+        return False
+    present = {int(float(k)) for k, n in delivered.counts.items() if n}
+    return 2 in present and present <= {2, 7, 18}
