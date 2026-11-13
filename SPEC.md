@@ -46,7 +46,7 @@ Relationship to the suite: it is a standalone peer. Its rasters are plain GeoTIF
 | Write posture | read-only by default; processing routes opt-in with `SURVEY_ALLOW_PROCESS=1` via `argus_cortex.server.WriteGuard` (copy the pattern from `../argus-atlas/src/argus_atlas/server/app.py`). `/health.read_only == not allow_process` |
 | Image | `ubuntu:24.04` + apt `pdal gdal-bin python3-gdal proj-data` (one consistent GDAL/PROJ that PDAL links against). Do **not** layer apt PDAL on `ghcr.io/osgeo/gdal` — two GDALs. Verify the PDAL version (Ubuntu 24.04 ships 2.6.x) has `readers.copc`, `writers.copc`, `filters.smrf`, `filters.csf`, `filters.hag_nn` |
 | CI | standalone `.github/workflows/ci.yml` that apt-installs the same packages (the shared argus-ci workflow has no system-package hook; atlas does the same — copy its ci.yml as the starting point) |
-| Branches | `dev` default (feature PRs), `main` protected (release PRs only). Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading |
+| Branches | `dev` default (feature PRs); `main` never ahead of `dev`, moved by fast-forward to a CI-passed `dev` commit (or, if protected, a release PR followed at once by a back-merge into `dev`). Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading |
 | Units | metres internally. If input is in US survey feet or international feet, convert explicitly and record it; never guess |
 
 ## 3. Core rules (put these in the repo's CLAUDE.md)
