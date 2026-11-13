@@ -9,7 +9,11 @@
   roof edges and canopy but reads high on any slope by about slope × res/2 — a
   +6 % volume bias on a 1:2 stockpile at 0.25 m — so it is never the default.
 - **CHM**: ``filters.hag_nn`` per buffered tile, then the highest
-  HeightAboveGround per cell (binmode).
+  HeightAboveGround per cell (binmode). Sparse canopy at a fine ``res`` leaves
+  many empty bins (27 % on the USGS sample at 0.5 m); ``chm_method="radius"``
+  takes the highest point within ``r = res·√2`` of each cell centre instead,
+  which fills those cells at the cost of widening every crown by up to ``r``
+  (recorded in the method).
 
 Every surface gets a void mask (1 = void, 0 = data, 255 = outside the coverage
 boundary) and a void % *of the covered area*, before and after any fill.
@@ -116,11 +120,14 @@ def surfaces(
     chm: bool = True,
     fill_voids: int | None = None,
     dsm_method: str = "idw",
+    chm_method: str = "max",
     workers: int | None = None,
 ) -> SurfacesReport:
     job.require_crs(STEP, height=True)
     if dsm_method not in {"idw", "max"}:
         raise SurveyError("--dsm-method must be idw or max")
+    if chm_method not in {"max", "radius"}:
+        raise SurveyError("--chm-method must be max or radius")
     if not (dtm or dsm or chm):
         raise SurveyError("nothing to do: choose at least one of --dtm/--dsm/--chm")
     ingest = job.sidecar.ingest
@@ -197,11 +204,15 @@ def surfaces(
                 )
                 path = job.path("chm.tif")
                 readers = [{"type": "readers.las", "filename": str(p)} for p in sorted(parts.glob("*.laz"))]
+                if chm_method == "radius":
+                    chm_writer = _writer(path, grid, "max", dimension="HeightAboveGround", radius=radius, window_size=0)
+                else:
+                    chm_writer = _writer(path, grid, "max", dimension="HeightAboveGround", binmode=True)
                 pdal_pipeline(
                     [
                         *readers,
                         {"type": "filters.range", "limits": "Classification![7:7]"},
-                        _writer(path, grid, "max", dimension="HeightAboveGround", binmode=True),
+                        chm_writer,
                     ],
                     step=STEP,
                     sink=sink,
@@ -211,7 +222,15 @@ def surfaces(
                 rasters.set_crs(path, raster_srs(job), sink=sink, step=STEP)
             finally:
                 shutil.rmtree(parts, ignore_errors=True)
-            jobs.append(("chm", path, "max", "HeightAboveGround (hag_nn) of all non-noise points", None))
+            jobs.append(
+                (
+                    "chm",
+                    path,
+                    "max" if chm_method == "max" else "radius-max",
+                    "HeightAboveGround (hag_nn) of all non-noise points",
+                    radius if chm_method == "radius" else None,
+                )
+            )
 
         for kind, path, output_type, used, r in jobs:
             void = _void_mask(job, path, coverage, job.path(f"{kind}_voids.tif"))
@@ -223,6 +242,11 @@ def surfaces(
             stats = rasters.stats(path, sink=sink, step=STEP)
             if output_type == "idw":
                 method = f"IDW (power 1) of {used} within r = {r:.3f} m of each cell centre"
+            elif output_type == "radius-max":
+                method = (
+                    f"highest value of {used} within r = {r:.3f} m of each cell centre "
+                    f"(crowns widened by up to {r:.3f} m)"
+                )
             else:
                 method = f"highest value per cell (binned) of {used}"
             rec = SurfaceRecord(
@@ -254,7 +278,10 @@ def surfaces(
                 description=f"{kind.upper()} void mask (1 void, 0 data, 255 outside coverage)",
             )
             if rec.void_percent > 5:
-                job.warn(f"{kind.upper()} has {rec.void_percent:.1f}% voids inside the coverage")
+                hint = ""
+                if kind == "chm" and chm_method == "max":
+                    hint = " (sparse bins: try --chm-method radius or a coarser --res)"
+                job.warn(f"{kind.upper()} has {rec.void_percent:.1f}% voids inside the coverage{hint}")
 
         if dtm:
             hs = job.path("hillshade.tif")

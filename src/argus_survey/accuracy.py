@@ -1,17 +1,28 @@
-"""Vertical accuracy against surveyed check points, per ASPRS Positional Accuracy Standards, Edition 2 (2023).
+"""Vertical accuracy against surveyed check points, per ASPRS Positional Accuracy Standards, Edition 2, Version 2.
 
-What Edition 2 changed, and how it is applied here (checked against ASPRS/LIDAR Magazine
-summaries of the published standard; see docs):
+Checked against the standard's text (Edition 2, Version 2, 2024; section numbers below are
+that edition's):
 
-- Accuracy is reported as **RMSE only** — the 95 % confidence figure (1.96 × RMSEz) of
-  Edition 1 is gone, so it is never printed.
-- At least **30** check points for a fully compliant assessment (maximum 120); fewer is
-  reported, and flagged.
-- The **check points' own survey accuracy counts**: product RMSE = √(RMSE_data² +
-  RMSE_checkpoints²) when ``--checkpoint-rmse`` is given; check points should be at least
-  twice as accurate as the accuracy class tested.
-- **NVA** (non-vegetated) is the pass/fail measure; **VVA** (vegetated) is tested and
-  reported as found, with no pass/fail.
+- Accuracy is reported as **RMSE only** — Edition 1's 95 % confidence figure is gone, so
+  it is never printed. (Australian ICSM specifications still state accuracy at 95 %; that
+  figure is deliberately not reported here — see the project's issues.)
+- Accuracy classes are free-valued ("#-cm", §7.4, Table 7.2): NVA RMSE_V ≤ #; VVA "as
+  found". The user states the class with ``--class-cm``.
+- **Product accuracy** (§7.12.4): RMSE_V = √(RMSE_V1² + RMSE_V2²), where RMSE_V1 is the
+  residuals' RMSE and RMSE_V2 the check point survey's own 1σ vertical RMSE as reported by the
+  surveyor (``--checkpoint-rmse``; Addendum II §A). Check points should be at least twice as
+  accurate as the class (§7.13).
+- At least **30** check points per group (§7.14); fewer get §7.16.1's reduced-checkpoint
+  statement ("tested as required by … ONLY n checkpoints"), not the "tested to meet" one.
+- Statements follow §7.16.1's wording. The standard has no wording for a failed NVA test;
+  ours says so plainly.
+- §7.16 statistics: min, max, mean, median, std, RMSE. §7.2: mean error should be < 25 % of
+  the target RMSE (else investigate); a residual beyond 3 × the target RMSE is a blunder.
+  Blunders are listed, never dropped (§C.9: "> 3σ" alone is no reason to discard a point).
+- The surface is sampled bilinearly. §C.11 recommends the containing pixel unless the data
+  user agrees otherwise; the method is stated in the report either way.
+- Horizontal accuracy (RMSE_H) is not tested. Fine for LiDAR (§7.6), but §7.6 asks for it
+  on photogrammetric elevation data, so a photogrammetry job gets a note.
 
 Residuals are surface − check (data minus checkpoint). A point outside the surface or in a
 void is excluded and listed, never silently dropped. Check points are given in a stated CRS
@@ -23,6 +34,7 @@ from __future__ import annotations
 
 import csv
 import math
+import statistics
 from pathlib import Path
 
 from argus_survey import crs as crs_mod
@@ -41,8 +53,11 @@ from argus_survey.qa import horizontal_srs
 from argus_survey.tools import run, sha256_file
 
 STEP = "accuracy"
-STANDARD = "ASPRS Positional Accuracy Standards for Digital Geospatial Data, Edition 2 (2023)"
+STANDARD = "ASPRS Positional Accuracy Standards for Digital Geospatial Data, Edition 2, Version 2 (2024)"
 MIN_CHECKS = 30
+BIAS_FRACTION = 0.25  # §7.2: mean error should be below 25 % of the target RMSE
+BLUNDER_FACTOR = 3.0  # §7.2: beyond 3 × the target RMSE is a blunder
+
 VVA_WORDS = ("veg", "vva")
 
 
@@ -80,8 +95,11 @@ def group_of(description: str) -> str:
     return "VVA" if any(d.startswith(w) for w in VVA_WORDS) else "NVA"
 
 
-def group_stats(rows: list[CheckResidual], group: str, checkpoint_rmse: float | None) -> AccuracyGroup:
-    used = [r.residual for r in rows if r.group == group and r.residual is not None]
+def group_stats(
+    rows: list[CheckResidual], group: str, checkpoint_rmse: float | None, target_class_cm: float | None = None
+) -> AccuracyGroup:
+    mine = [(r.id, r.residual) for r in rows if r.group == group and r.residual is not None]
+    used = [e for _, e in mine]
     excluded = sum(1 for r in rows if r.group == group and r.residual is None)
     n = len(used)
     if n == 0:
@@ -101,6 +119,10 @@ def group_stats(rows: list[CheckResidual], group: str, checkpoint_rmse: float | 
     std = math.sqrt(sum((e - mean) ** 2 for e in used) / (n - 1)) if n > 1 else None
     rmse = math.sqrt(sum(e * e for e in used) / n)
     product = math.sqrt(rmse * rmse + checkpoint_rmse * checkpoint_rmse) if checkpoint_rmse is not None else rmse
+    # the class is an NVA target; a VVA has none (reported as found), so it is judged by its own RMSE
+    target = target_class_cm / 100 if target_class_cm is not None and group == "NVA" else rmse
+    limit = BLUNDER_FACTOR * target
+    blunders = [i for i, e in mine if limit > 0 and abs(e) > limit]
     return AccuracyGroup(
         group=group,  # type: ignore[arg-type]
         n=n,
@@ -112,6 +134,48 @@ def group_stats(rows: list[CheckResidual], group: str, checkpoint_rmse: float | 
         max_abs_m=round(max(abs(e) for e in used), 4),
         meets_minimum_count=n >= MIN_CHECKS,
         pass_fail_applies=group == "NVA",
+        min_m=round(min(used), 4),
+        max_m=round(max(used), 4),
+        median_m=round(statistics.median(used), 4),
+        blunders=blunders,
+    )
+
+
+def statement_for(g: AccuracyGroup, target_class_cm: float | None, *, nva_meets: bool | None = None) -> str:
+    """§7.16.1's wording for one tested group (NVA or VVA).
+
+    *nva_meets*: for a VVA statement, whether the NVA test passed. Only the NVA is pass/fail, so a VVA is
+    worded "tested to meet" a class only when the NVA met it.
+    """
+    assert g.rmse_m is not None
+    found = f"{100 * g.rmse_m:.1f} (cm)"
+    name = "Non-Vegetated Vertical Accuracy (NVA)" if g.group == "NVA" else "Vegetated Vertical Accuracy (VVA)"
+    area = f"{g.group} tested area"
+    fails = g.group == "NVA" and target_class_cm is not None and 100 * g.rmse_m > target_class_cm
+    if not g.meets_minimum_count:
+        produced = (
+            f"This data set was produced to meet a {target_class_cm:g} (cm) RMSEV Vertical Positional Accuracy Class. "
+            if target_class_cm is not None
+            else ""
+        )
+        return (
+            f"This data set was tested as required by {STANDARD}. Although the Standards call for a minimum of "
+            f"thirty (30) checkpoints, this test was performed using ONLY {g.n} checkpoints. {produced}"
+            f"The tested vertical positional accuracy was found to be RMSEV = {found} using the reduced number of "
+            f"checkpoints in the {area}."
+            + (f" It does NOT meet the {target_class_cm:g} (cm) RMSEV Vertical Accuracy Class." if fails else "")
+        )
+    if target_class_cm is None or (g.group == "VVA" and not nva_meets):
+        return f"This data set was tested as required by {STANDARD}. The {name} was found to be RMSEV = {found}."
+    if fails:
+        # the standard has no wording for a failed test
+        return (
+            f"This data set was tested against {STANDARD} for a {target_class_cm:g} (cm) RMSEV Vertical Accuracy "
+            f"Class and does NOT meet it. The {name} was found to be RMSEV = {found}."
+        )
+    return (
+        f"This data set was tested to meet {STANDARD} for a {target_class_cm:g} (cm) RMSEV Vertical Accuracy Class. "
+        f"The {name} was found to be RMSEV = {found}."
     )
 
 
@@ -192,52 +256,68 @@ def accuracy(
                     excluded=None if v is not None else "outside the surface or in a void",
                 )
             )
-        groups = [group_stats(residuals, g, checkpoint_rmse) for g in ("NVA", "VVA")]
+        groups = [group_stats(residuals, g, checkpoint_rmse, target_class_cm) for g in ("NVA", "VVA")]
         groups = [g for g in groups if g.n or g.excluded]
         nva = next((g for g in groups if g.group == "NVA"), None)
         vva = next((g for g in groups if g.group == "VVA"), None)
 
         notes: list[str] = []
         statement_parts: list[str] = []
-        if nva and nva.rmse_m is not None:
-            rmse_cm = 100 * nva.rmse_m
-            if target_class_cm is not None:
-                verdict = "meets" if rmse_cm <= target_class_cm else "does NOT meet"
-                statement_parts.append(
-                    f"This data set was tested against the {STANDARD} for a {target_class_cm:g}-cm RMSEV vertical "
-                    f"accuracy class and {verdict} it: NVA RMSEV = {rmse_cm:.1f} cm (n = {nva.n})."
-                )
-            else:
-                statement_parts.append(f"Tested per the {STANDARD}: NVA RMSEV = {rmse_cm:.1f} cm (n = {nva.n}).")
-        elif nva is None or nva.n == 0:
+        if nva is None or nva.n == 0:
             notes.append("No non-vegetated check points fell on the surface: no NVA could be computed")
+        nva_meets = (
+            nva is not None
+            and nva.rmse_m is not None
+            and nva.meets_minimum_count  # a reduced-checkpoint NVA can't carry a "tested to meet" VVA
+            and target_class_cm is not None
+            and 100 * nva.rmse_m <= target_class_cm
+        )
+        for g in (nva, vva):
+            if g is not None and g.rmse_m is not None:
+                statement_parts.append(statement_for(g, target_class_cm, nva_meets=nva_meets))
         if vva and vva.rmse_m is not None:
-            statement_parts.append(
-                f"VVA RMSEV = {100 * vva.rmse_m:.1f} cm (n = {vva.n}), reported as found "
-                "(Edition 2 sets no VVA pass/fail)."
-            )
+            statement_parts.append("(Edition 2 sets no VVA pass/fail; it is reported as found.)")
         for g in groups:
             if g.n and not g.meets_minimum_count:
                 notes.append(
-                    f"{g.group}: {g.n} check points — Edition 2 requires at least {MIN_CHECKS} for a fully "
-                    "compliant assessment"
+                    f"{g.group}: {g.n} check points — Edition 2 requires at least {MIN_CHECKS} (§7.14); the "
+                    "statement uses the reduced-checkpoint wording of §7.16.1"
                 )
             if g.excluded:
                 notes.append(f"{g.group}: {g.excluded} check point(s) excluded (outside the surface or in a void)")
+            if g.blunders:
+                basis = (
+                    f"the {target_class_cm:g}-cm target RMSE"
+                    if target_class_cm is not None and g.group == "NVA"
+                    else "the data RMSE"
+                )
+                notes.append(
+                    f"{g.group}: {len(g.blunders)} residual(s) beyond 3 × {basis} ({', '.join(g.blunders[:10])}) — "
+                    "investigate as blunders (§7.2); they are kept in the statistics"
+                )
         if checkpoint_rmse is None:
             notes.append(
-                "Check point survey accuracy not supplied (--checkpoint-rmse): the RMSE shown is of the "
-                "residuals alone; Edition 2 product accuracy also includes the check points' own accuracy"
+                "Check point survey accuracy not supplied (--checkpoint-rmse, the surveyor's 1σ vertical RMSE): the "
+                "RMSE shown is of the residuals alone; Edition 2 product accuracy also includes it (§7.12.4)"
             )
         elif target_class_cm is not None and 100 * checkpoint_rmse > target_class_cm / 2:
             notes.append(
                 f"Check points ({100 * checkpoint_rmse:.1f} cm) should be at least twice as accurate as the "
-                f"{target_class_cm:g}-cm class tested"
+                f"{target_class_cm:g}-cm class tested (§7.13)"
             )
-        if nva and nva.mean_m is not None and nva.rmse_data_m and abs(nva.mean_m) > 0.5 * nva.rmse_data_m:
+        if nva and nva.mean_m is not None and nva.rmse_data_m:
+            target = target_class_cm / 100 if target_class_cm is not None else nva.rmse_data_m
+            if abs(nva.mean_m) > BIAS_FRACTION * target:
+                basis = f"the {target_class_cm:g}-cm target RMSE" if target_class_cm is not None else "the RMSE"
+                notes.append(
+                    f"NVA mean error {100 * nva.mean_m:+.1f} cm exceeds 25 % of {basis} (§7.2): investigate a "
+                    "systematic bias (datum, geoid or control)"
+                )
+        ingest = job.sidecar.ingest
+        if ingest is not None and ingest.source_type == "photogrammetry":
             notes.append(
-                f"NVA mean error {100 * nva.mean_m:+.1f} cm is more than half the RMSE: a systematic bias "
-                "(datum, geoid or control) dominates the error"
+                "Photogrammetric elevation data: §7.6 asks for horizontal accuracy (RMSEH) as well, tested or "
+                "'produced to meet'; argus-survey tests vertical accuracy only"
             )
         crs = job.sidecar.crs
         if crs is not None and crs.vertical_assumed:
@@ -266,7 +346,7 @@ def accuracy(
                 w.writerow(
                     [r.id, r.group, r.x, r.y, r.z_check, r.z_surface, r.residual, r.excluded or "", r.description]
                 )
-        job.add_product("accuracy", "accuracy.json", step=STEP, description="Vertical accuracy (ASPRS ed. 2)")
+        job.add_product("accuracy", "accuracy.json", step=STEP, description="Vertical accuracy (ASPRS ed. 2 v2)")
         job.add_product("residuals", "accuracy_residuals.csv", step=STEP, description="Check point residuals")
         for n in notes:
             job.warn(f"accuracy: {n}")

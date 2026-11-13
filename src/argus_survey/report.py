@@ -206,6 +206,32 @@ def section_crs(job: Job) -> str:
     if c.epoch is not None:
         rows.append(("Coordinate epoch", e(c.epoch)))
     out = ["<h2>Coordinate reference</h2>", kv(rows)]
+    sf = s.ingest.scale_factors if s.ingest else None
+    if sf is not None:
+        srows = [
+            (
+                "Point scale factor k",
+                e(
+                    f"{sf.point_scale:.8f} at the centroid ({sf.point_scale_min:.8f} – {sf.point_scale_max:.8f} over "
+                    f"the extent's corners)"
+                ),
+            ),
+            ("Grid convergence", e(f"{sf.convergence_deg:+.6f}°")),
+        ]
+        if sf.height_factor is not None:
+            h = f"{sf.ellipsoidal_height_m:.3f} m ellipsoidal"
+            if sf.geoid_separation_m is not None:
+                h += f" (mean height {sf.height_m:.3f} m + geoid separation {sf.geoid_separation_m:.3f} m)"
+            srows.append(("Height factor R/(R+h)", e(f"{sf.height_factor:.8f}, h = {h}, R = {sf.radius_m:,.1f} m")))
+            srows.append(("Combined scale factor", f"<strong>{e(f'{sf.combined:.8f}')}</strong>"))
+        else:
+            srows.append(("Combined scale factor", "not known (no vertical datum, so no height factor)"))
+        out.append(
+            "<h3>Grid to ground</h3>"
+            + kv(srows)
+            + f'<p class="note">{e(sf.method)}. Areas and volumes in this report are grid values unless marked '
+            "ground.</p>"
+        )
     if s.ingest:
         src = s.ingest.source_crs
         out.append(f"<h3>Source data</h3>{kv([('Source CRS', e(src.name)), ('Given by', e(src.source))])}")
@@ -315,7 +341,10 @@ def section_ground(job: Job) -> str:
             "<h2>Ground classification</h2>",
             kv(
                 [
-                    ("Method", e(f"{g.method.upper()}: {params(g.params)}")),
+                    (
+                        "Method",
+                        e(f"{g.method.upper()}{f' (preset {g.preset})' if g.preset else ''}: {params(g.params)}"),
+                    ),
                     (
                         "Outliers first",
                         e(f"filters.outlier ({params(g.outlier_params)}) → class 7, ignored by the ground filter"),
@@ -399,6 +428,21 @@ def _volume_table(v: VolumeReport) -> str:
         for z in v.zones
     ]
     t = table(["Zone", "Area m²", f"{a} m³", f"{b} m³", "Net m³", "Voids %"], rows, {1, 2, 3, 4, 5})
+    if v.combined_scale_factor is not None:
+        grows = [
+            [
+                e(z.name),
+                e(f"{z.ground_area_m2:,.2f}"),
+                e(f"{z.ground_above_m3:,.2f}"),
+                e(f"{z.ground_below_m3:,.2f}"),
+                e(f"{z.ground_net_m3:,.2f}"),
+            ]
+            for z in v.zones
+            if z.ground_area_m2 is not None
+        ]
+        t += f'<p class="note">At ground (grid ÷ {v.combined_scale_factor:.8f}²):</p>' + table(
+            ["Zone", "Ground area m²", f"{a} m³", f"{b} m³", "Net m³"], grows, {1, 2, 3, 4}
+        )
     bases = "".join(
         f"<li><strong>{e(z.name)}</strong>: {e(z.base)}"
         + (
@@ -436,10 +480,12 @@ def section_volumes(job: Job) -> str:
             title = {"stockpile": "Stockpiles", "cutfill": "Cut and fill", "change": "Change"}[v.kind]
             out.append(f"<h3>{e(title)}</h3>{_volume_table(v)}")
         out.append(cmd_links(s.commands, "volume") + cmd_links(s.commands, "cutfill"))
-    c = s.change
-    if c:
+    changes = s.changes or ([s.change] if s.change else [])  # older sidecars keep only the latest
+    if changes:
+        out.append("<h2>Change between epochs</h2>")
+    for c in changes:
         out.append(
-            "<h2>Change between epochs</h2>"
+            f"<h3>{e(c.surface.upper())}</h3>"
             + kv(
                 [
                     (
@@ -463,6 +509,7 @@ def section_volumes(job: Job) -> str:
                 ]
             )
         )
+        lod_kind = f"dod_{c.surface}_lod" if f"dod_{c.surface}_lod" in s.products else "dod_lod"
         ramp = [
             (-1.0, (33, 102, 172)),
             (-c.lod_m, (146, 197, 222)),
@@ -472,10 +519,11 @@ def section_volumes(job: Job) -> str:
         ]
         out.append(
             figure(
-                thumbnail(job, "dod_lod", color=ramp),
+                thumbnail(job, lod_kind, color=ramp),
                 "DoD beyond the LoD: red = gain, blue = loss, white = no detectable change (colours saturate at ±1 m)",
             )
         )
+    if changes:
         out.append(cmd_links(s.commands, "change"))
     return "\n".join(out)
 
@@ -511,11 +559,13 @@ def section_accuracy(job: Job) -> str:
             e(g.group),
             e(g.n),
             e(g.excluded),
+            num(g.min_m),
+            num(g.max_m),
             num(g.mean_m),
+            num(g.median_m),
             num(g.std_m),
             num(g.rmse_data_m),
             num(g.rmse_m),
-            num(g.max_abs_m),
             "pass/fail" if g.pass_fail_applies else "reported as found",
             "yes" if g.meets_minimum_count else '<strong style="color:var(--bad)">no</strong>',
         ]
@@ -523,11 +573,25 @@ def section_accuracy(job: Job) -> str:
     ]
     out.append(
         table(
-            ["Group", "n", "Excl.", "Mean m", "Std m", "RMSE data m", "RMSE product m", "Max |e| m", "Use", "≥ 30"],
+            [
+                "Group",
+                "n",
+                "Excl.",
+                "Min m",
+                "Max m",
+                "Mean m",
+                "Median m",
+                "Std m",
+                "RMSE data m",
+                "RMSE product m",
+                "Use",
+                "≥ 30",
+            ],
             rows,
-            {1, 2, 3, 4, 5, 6, 7},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9},
         )
     )
+    out.append("<p class='note'>RMSE product = √(RMSE data² + check point survey RMSE²) (ASPRS ed. 2 v2 §7.12.4).</p>")
     if a.notes:
         out.append("<ul>" + "".join(f"<li class='note'>{e(n)}</li>" for n in a.notes) + "</ul>")
     res_rows = [

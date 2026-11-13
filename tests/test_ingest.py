@@ -161,3 +161,67 @@ def test_directory_of_tiles(scene: synthetic.Scene, tmp_path: Path, jobs_root: P
     rec = ingest(job, [tiles])
     assert len(job.sidecar.inputs) == 2
     assert rec.output_count == summarize(a)[0].count + summarize(b)[0].count
+
+
+def test_e57_ingest_needs_s_srs_and_keeps_coordinates(
+    scene: synthetic.Scene, synth_dir: Path, jobs_root: Path, las_mga_ahd: Path
+) -> None:
+    from argus_survey.ground import ground
+
+    e57 = synthetic.write_scene(scene, synth_dir / "scan.e57")
+    store = JobStore(jobs_root)
+    with pytest.raises(SurveyError, match="no CRS"):
+        ingest(store.open("e57-nocrs", create=True), [e57])
+
+    job = store.open("e57", create=True)
+    rec = ingest(job, [e57], s_srs="EPSG:7850+5711")
+    ref, _ = summarize(las_mga_ahd)
+    out, _ = summarize(job.product_path("copc"))
+    assert rec.output_count == ref.count
+    assert job.sidecar.inputs[0].summary.copc is False
+    # double precision through E57 and mm scale into the COPC: the bounds agree with the LAS to the mm
+    for k in ("minx", "miny", "minz", "maxx", "maxy", "maxz"):
+        assert getattr(out.bounds, k) == pytest.approx(getattr(ref.bounds, k), abs=0.0015), k
+    assert rec.source_type == "terrestrial"
+    assert any("E57 declares no CRS" in w for w in job.sidecar.warnings)
+    assert any(c.pipeline and c.pipeline[0]["type"] == "readers.e57" for c in job.sidecar.commands)
+    # no return numbering in E57: the parts carry 1-of-1, which SMRF's return filter accepts
+    g = ground(job)
+    assert g.ground_percent > 50 and not g.normalised_returns
+
+
+def test_unsupported_input_suffix(tmp_path: Path, jobs_root: Path) -> None:
+    f = tmp_path / "scan.ply"
+    f.write_text("ply\n")
+    with pytest.raises(SurveyError, match="unsupported input format"):
+        ingest(JobStore(jobs_root).open("ply", create=True), [f])
+
+
+def test_scale_factors_mga_ahd(las_mga_ahd: Path, jobs_root: Path, scene: synthetic.Scene) -> None:
+    import math
+
+    job = JobStore(jobs_root).open("scale", create=True)
+    sf = ingest(job, [las_mga_ahd]).scale_factors
+    assert sf is not None
+    # UTM: k ≈ k0 (1 + Δx² / 2R²) with Δx the offset from the central meridian's 500 km false easting
+    dx = sf.easting - 500000.0
+    assert sf.point_scale == pytest.approx(0.9996 * (1 + dx * dx / (2 * sf.radius_m**2)), abs=2e-6)
+    assert sf.point_scale_min <= sf.point_scale <= sf.point_scale_max
+    # AUSGeoid2020 around Perth: the ellipsoid lies some 30 m from AHD
+    assert sf.geoid_separation_m is not None and 25 < abs(sf.geoid_separation_m) < 35
+    assert sf.operation and sf.ellipsoidal_height_m == pytest.approx(sf.height_m + sf.geoid_separation_m, abs=2e-3)
+    assert sf.height_factor == pytest.approx(sf.radius_m / (sf.radius_m + sf.ellipsoidal_height_m), abs=1e-8)
+    assert sf.combined == pytest.approx(sf.point_scale * sf.height_factor, abs=1e-8)
+    assert math.isclose(sf.latitude, -31.9, abs_tol=0.2) and math.isclose(sf.longitude, 115.8, abs_tol=0.2)
+
+
+def test_scale_factor_pcg2020_is_near_one(las_mga_ahd: Path, jobs_root: Path) -> None:
+    job = JobStore(jobs_root).open("pcg", create=True)
+    sf = ingest(job, [las_mga_ahd], t_srs="EPSG:8031+5711").scale_factors
+    assert sf is not None and sf.combined is not None
+    assert abs(sf.point_scale - 1) < 2e-5  # a low-distortion grid: what LSG2020 is for
+
+
+def test_scale_factor_without_vertical_has_no_height_factor(las_mga_only: Path, jobs_root: Path) -> None:
+    sf = ingest(JobStore(jobs_root).open("scale-nov", create=True), [las_mga_only]).scale_factors
+    assert sf is not None and sf.height_factor is None and sf.combined is None and "no height factor" in sf.method

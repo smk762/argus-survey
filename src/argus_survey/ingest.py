@@ -16,6 +16,12 @@ Ingest is the step where datums are decided, so it is the most defensive:
    ``filters.stats`` → LAZ; untwine then builds ``points.copc.laz`` from the parts
    out of core, so a 500-million-point flight never has to fit in RAM.
 5. Point counts are reconciled: without a crop, every input point must arrive.
+
+E57 (terrestrial / mobile scanners) is read with ``readers.e57``, which applies
+each scan's pose so all scans share the file's frame. E57 carries no usable CRS,
+so ``--s-srs`` is required, and it has no return numbering: the LAZ parts get
+1-of-1 returns (PDAL's default) and the source type is recorded as terrestrial,
+so the DSM uses every point.
 """
 
 from __future__ import annotations
@@ -41,13 +47,14 @@ from argus_survey.models import (
     SurveyError,
     TransformOp,
 )
+from argus_survey.scale import scale_factors
 from argus_survey.tools import CommandSink, pdal_pipeline, run, run_json, sha256_file
 
 log = structlog.get_logger(__name__)
 
 STEP = "ingest"
 COPC_NAME = "points.copc.laz"
-POINT_SUFFIXES = (".las", ".laz")
+POINT_SUFFIXES = (".las", ".laz", ".e57")
 OUTPUT_SCALE = 0.001  # mm: finer than any survey tolerance, coarse enough to compress well
 
 # PDAL logs these per point and exits 0; we treat them as a failed transform.
@@ -88,7 +95,7 @@ def summarize(path: Path, *, sink: CommandSink | None = None, step: str = STEP) 
 
 
 def expand_inputs(paths: list[Path]) -> list[Path]:
-    """Files as given; a directory contributes its ``*.las``/``*.laz``, sorted."""
+    """Files as given; a directory contributes its ``*.las``/``*.laz``/``*.e57``, sorted."""
     out: list[Path] = []
     for p in paths:
         p = p.expanduser()
@@ -99,8 +106,16 @@ def expand_inputs(paths: list[Path]) -> list[Path]:
         else:
             raise SurveyError(f"input {p} does not exist")
     if not out:
-        raise SurveyError("no point cloud inputs (.las/.laz) found")
+        raise SurveyError("no point cloud inputs (.las/.laz/.e57) found")
+    unsupported = [p.name for p in out if p.suffix.lower() not in POINT_SUFFIXES]
+    if unsupported:
+        raise SurveyError(f"unsupported input format: {', '.join(unsupported[:5])} (LAS, LAZ, COPC or E57)")
     return out
+
+
+def reader_type(path: Path) -> str:
+    """The PDAL reader for *path* (``readers.las`` also reads LAZ and COPC)."""
+    return "readers.e57" if path.suffix.lower() == ".e57" else "readers.las"
 
 
 # ── CRS resolution ───────────────────────────────────────────────────────────
@@ -264,8 +279,12 @@ def merge_stats(parts: list[list[DimStats]]) -> list[DimStats]:
     return merged
 
 
-def detect_source_type(stats: list[DimStats], dimensions: list[str]) -> tuple[SourceType, str]:
-    """LiDAR vs photogrammetry from return numbering (and colour), with the reason."""
+def detect_source_type(
+    stats: list[DimStats], dimensions: list[str], *, files: list[Path] | None = None
+) -> tuple[SourceType, str]:
+    """LiDAR vs photogrammetry from return numbering (and colour), with the reason; E57 is terrestrial."""
+    if files and all(reader_type(f) == "readers.e57" for f in files):
+        return "terrestrial", "E57 input (terrestrial/mobile scanner exchange format, no return numbering)"
     by = {s.name: s for s in stats}
     rn, nr = by.get("ReturnNumber"), by.get("NumberOfReturns")
     has_rgb = all(d in dimensions for d in ("Red", "Green", "Blue"))
@@ -384,7 +403,7 @@ def ingest(
         if written is None:
             raise SurveyError("the COPC was written without a CRS")
 
-        source_type, why = detect_source_type(stats, summaries[0][1].dimensions)
+        source_type, why = detect_source_type(stats, summaries[0][1].dimensions, files=files)
         record = IngestRecord(
             inputs_count=total,
             output_count=kept,
@@ -396,6 +415,12 @@ def ingest(
             source_type=source_type,
             stats=stats,
         )
+        z = next((st for st in stats if st.name == "Z"), None)
+        try:
+            record.scale_factors = scale_factors(target, out_summary.bounds, z.average if z else 0.0, sink=sink)
+        except (SurveyError, KeyError, IndexError, ValueError) as exc:
+            # informational: an unexpected PROJJSON shape must not throw away a COPC that is already built
+            job.warn(f"Grid-to-ground scale factor not computed: {exc}")
         job.sidecar.crs = target
         job.sidecar.ingest = record
         job.add_product(
@@ -409,6 +434,13 @@ def ingest(
             source_type_reason=why,
         )
         _warnings(job, target, record)
+        e57 = [f.name for f in files if reader_type(f) == "readers.e57"]
+        if e57:  # resolve_source_crs already refused E57 without --s-srs
+            job.warn(
+                f"E57 declares no CRS; {', '.join(e57[:3])} {'is' if len(e57) == 1 else 'are'} taken to be in "
+                f"{source.name} as stated by --s-srs: confirm the scans were registered to that grid, not left in "
+                "the scanner's local frame"
+            )
     return record
 
 
@@ -451,7 +483,7 @@ def _pipeline(
     polygons: list[str] | None,
     reader_override: bool,
 ) -> list[dict[str, Any]]:
-    reader: dict[str, Any] = {"type": "readers.las", "filename": str(src)}
+    reader: dict[str, Any] = {"type": reader_type(src), "filename": str(src)}
     if reader_override:
         reader["override_srs"] = source.definition
     stages: list[dict[str, Any]] = [reader]
@@ -487,6 +519,7 @@ def _reset(job: Job) -> None:
     job.sidecar.ingest = None
     job.sidecar.crs = None
     job.sidecar.inputs = []
+    job.sidecar.exports = []  # their files went with the products above
     job.sidecar.warnings = []
     job.sidecar.steps_done = [s for s in job.sidecar.steps_done if s == STEP]
     job.save()

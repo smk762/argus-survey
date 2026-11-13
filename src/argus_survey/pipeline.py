@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from argus_survey.contours import contours
-from argus_survey.ground import ground
+from argus_survey.ground import filter_params, ground
 from argus_survey.ingest import ingest
 from argus_survey.jobs import Job
 from argus_survey.qa import qa
@@ -28,10 +28,12 @@ def run_all(
     crop: Path | None = None,
     crop_srs: str | None = None,
     method: str = "smrf",
+    preset: str | None = None,
     fill_voids: int | None = None,
     workers: int | None = None,
     echo: Callable[[str], Any] = print,
 ) -> Job:
+    filter_params(method, preset=preset)  # refuse a bad method/preset before the ingest, not after it
     rec = ingest(
         job,
         inputs,
@@ -45,7 +47,7 @@ def run_all(
     echo(f"ingest   {rec.output_count:,} points · {job.sidecar.crs.name if job.sidecar.crs else '?'}")
     q = qa(job, workers=workers)
     echo(f"qa       {q.density.p50:.1f} pts/m² median · {q.coverage_area_m2:,.0f} m² covered")
-    g = ground(job, method=method, workers=workers)  # type: ignore[arg-type]
+    g = ground(job, method=method, preset=preset, workers=workers)  # type: ignore[arg-type]
     echo(f"ground   {g.ground_percent:.1f}% ground · spacing {g.ground_spacing:.2f} m")
     if job.sidecar.crs is not None and job.sidecar.crs.has_height_datum:
         s = surfaces(job, res=res, fill_voids=fill_voids, workers=workers)

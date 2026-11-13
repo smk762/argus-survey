@@ -160,7 +160,7 @@ class Bounds3D(_Model):
         return max(self.maxx - self.minx, 0.0) * max(self.maxy - self.miny, 0.0)
 
 
-SourceType = Literal["lidar", "photogrammetry", "unknown"]
+SourceType = Literal["lidar", "photogrammetry", "terrestrial", "unknown"]  # terrestrial: E57 scanner data
 
 
 class CloudSummary(_Model):
@@ -201,6 +201,27 @@ class Product(FileRef):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
+class ScaleFactors(_Model):
+    """Grid-to-ground at the site centroid: ground distance = grid distance / combined (see ``scale.py``)."""
+
+    easting: float
+    northing: float
+    longitude: float
+    latitude: float
+    height_m: float  # mean point height, on the job's vertical datum
+    ellipsoidal_height_m: float | None  # None without a vertical datum
+    geoid_separation_m: float | None  # ellipsoidal − job height (N), when the job is on a gravity datum
+    point_scale: float  # projection scale factor k at the centroid
+    point_scale_min: float  # k over the extent's corners
+    point_scale_max: float
+    convergence_deg: float  # grid convergence at the centroid
+    radius_m: float  # Gaussian mean radius of the ellipsoid at the centroid
+    height_factor: float | None  # R / (R + h)
+    combined: float | None  # k × height factor
+    operation: str | None = None  # PROJ operation used to reach the ellipsoidal height
+    method: str
+
+
 class IngestRecord(_Model):
     inputs_count: int
     output_count: int
@@ -211,6 +232,23 @@ class IngestRecord(_Model):
     transform: TransformOp | None = None
     source_type: SourceType = "unknown"
     stats: list[DimStats] = Field(default_factory=list)
+    scale_factors: ScaleFactors | None = None  # grid-to-ground at the site
+
+
+class ExportRecord(_Model):
+    """A point-cloud deliverable for ReCap / Civil 3D (``export --points``)."""
+
+    format: Literal["las", "e57"]
+    path: str  # under the job dir
+    source: Literal["classified", "copc"]
+    points: int
+    crop: str | None = None
+    thin_m: float | None = None  # voxel size: first point kept per voxel
+    crs: str  # the coordinates' CRS (definition)
+    crs_name: str
+    crs_in_file: bool  # LAS 1.4 WKT: yes; E57: no CRS field
+    classes: dict[int, int] = Field(default_factory=dict)  # ASPRS code -> count
+    notes: str  # notes file under the job dir
 
 
 class JobSidecar(_Model):
@@ -230,9 +268,11 @@ class JobSidecar(_Model):
     surfaces: SurfacesReport | None = None
     contours: ContoursReport | None = None
     volumes: list[VolumeReport] = Field(default_factory=list)
-    change: ChangeReport | None = None
+    change: ChangeReport | None = None  # the most recent comparison
+    changes: list[ChangeReport] = Field(default_factory=list)  # latest per surface
     accuracy: AccuracyReport | None = None
     profiles: list[ProfileReport] = Field(default_factory=list)
+    exports: list[ExportRecord] = Field(default_factory=list)
     commands: list[CommandRecord] = Field(default_factory=list)
     products: dict[str, Product] = Field(default_factory=dict)
     timings: dict[str, float] = Field(default_factory=dict)
@@ -355,6 +395,7 @@ class QaReport(_Model):
 
 class GroundReport(_Model):
     method: Literal["smrf", "csf"]
+    preset: str | None = None  # named parameter set (e.g. "stockpile"), already merged into params
     params: dict[str, Any]
     outlier_params: dict[str, Any]
     points: int
@@ -416,6 +457,11 @@ class ZoneVolume(_Model):
     area_below_m2: float
     void_percent: float  # of the polygon's area with no value in either surface
     base: str  # description of the lower surface
+    # the same quantities at ground (grid / combined scale factor², see ScaleFactors), when known
+    ground_area_m2: float | None = None
+    ground_above_m3: float | None = None
+    ground_below_m3: float | None = None
+    ground_net_m3: float | None = None
     base_fit_rms_m: float | None = None  # plane bases: RMS of boundary heights about the fitted plane
     boundary_samples: int | None = None
 
@@ -430,6 +476,7 @@ class VolumeReport(_Model):
     zones: list[ZoneVolume]
     resampled: str | None = None  # if an input was resampled onto the grid, how
     allow_voids: bool = False
+    combined_scale_factor: float | None = None  # grid-to-ground factor used for the zones' ground_* figures
 
 
 class ChangeReport(_Model):
@@ -474,6 +521,12 @@ class AccuracyGroup(_Model):
     max_abs_m: float | None
     meets_minimum_count: bool
     pass_fail_applies: bool  # NVA: yes; VVA: reported as found (ed. 2)
+    # ed. 2 v2 §7.16: min, max, median alongside mean, std and RMSE (signed residuals)
+    min_m: float | None = None
+    max_m: float | None = None
+    median_m: float | None = None
+    # ids of residuals beyond 3 × the target RMSE (§7.2 blunder) or, with no class, 3 × the data RMSE (§C.2)
+    blunders: list[str] = Field(default_factory=list)
 
 
 class AccuracyReport(_Model):
@@ -520,6 +573,7 @@ class QaBody(_Model):
 
 class GroundBody(_Model):
     method: str = "smrf"
+    preset: str | None = None  # e.g. "stockpile" (SMRF slope 1.0); params override it
     params: dict[str, float | int | bool] = Field(default_factory=dict)
     keep_classes: bool = False
 
@@ -531,6 +585,7 @@ class SurfacesBody(_Model):
     chm: bool = True
     fill_voids: int | None = Field(default=None, ge=1)
     dsm_method: str = "idw"
+    chm_method: str = "max"  # max (binned) or radius (highest point within res·√2; fewer voids, wider crowns)
 
 
 class ContoursBody(_Model):
@@ -591,7 +646,15 @@ class RunBody(IngestBody):
     res: float = Field(default=0.5, gt=0)
     interval: float = Field(default=0.5, gt=0)
     method: str = "smrf"
+    preset: str | None = None
     fill_voids: int | None = Field(default=None, ge=1)
+
+
+class ExportBody(_Model):
+    points: Literal["las", "e57"] = "las"
+    polygon: str | None = None  # a polygon file under the data root
+    polygon_srs: str | None = None
+    thin: float | None = Field(default=None, gt=0)
 
 
 class EmptyBody(_Model):
@@ -691,6 +754,7 @@ WIRE_MODELS: tuple[type[BaseModel], ...] = (
     AccuracyBody,
     ProfileBody,
     RunBody,
+    ExportBody,
     EmptyBody,
     StartEvent,
     StepEvent,
