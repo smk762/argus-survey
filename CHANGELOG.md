@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-13
+
+First release, published to PyPI and GHCR.
+
 ### Added
 - Wire contract for UIs: `argus-survey schema [--check]` writes `schema/survey-wire.schema.json` (job.json, digests, health, every request body and SSE event) with `argus_cortex.wire`; the API's request bodies moved to `models.py`, and `/health` and the SSE payloads are built from the models. [argus-sightline](https://github.com/smk762/argus-sightline) generates its types from it.
 - `volume` and `cutfill` over the API take a polygon drawn on the map (`polygon_geojson`, a WGS 84 GeoJSON geometry, plus an optional zone `name`) instead of a file, the way `profile` takes a drawn line.
