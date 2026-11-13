@@ -41,12 +41,43 @@ CSF_DEFAULTS: dict[str, Any] = {
     "iterations": 500,
 }
 
+# Named parameter sets, layered over the method defaults (explicit parameters still win).
+# "stockpile": SMRF's default slope (0.15 ≈ 8.5°) cuts the crest off a pile — 8 % of a 1:2 cone, 30 % of a
+# 39° one in the synthetic scene. Slope 1.0 (45°) clears the angle of repose of loose material (≈ 30–40°)
+# yet still rejects vertical walls and canopy. CSF's cloth drapes over a pile whatever its rigidness (it
+# kept ~20 % of the same cone), so there is no CSF stockpile preset.
+PRESETS: dict[str, dict[str, dict[str, Any]]] = {
+    "stockpile": {"smrf": {"slope": 1.0}},
+}
+
+
+def filter_params(method: str, params: dict[str, Any] | None = None, preset: str | None = None) -> dict[str, Any]:
+    """The ground filter's parameters: method defaults, then *preset*, then explicit *params*; refuses bad input.
+
+    Cheap and job-free, so ``run`` can check its arguments before an expensive ingest.
+    """
+    if method not in ("smrf", "csf"):
+        raise SurveyError(f"unknown ground method {method!r}; choose smrf or csf")
+    defaults = SMRF_DEFAULTS if method == "smrf" else CSF_DEFAULTS
+    unknown = set(params or {}) - set(defaults)
+    if unknown:
+        raise SurveyError(f"unknown {method} parameter(s): {', '.join(sorted(unknown))}")
+    base = dict(defaults)
+    if preset is not None:
+        if preset not in PRESETS:
+            raise SurveyError(f"unknown ground preset {preset!r}; choose from {', '.join(sorted(PRESETS))}")
+        if method not in PRESETS[preset]:
+            raise SurveyError(f"preset {preset!r} is for {', '.join(PRESETS[preset])} only, not {method}")
+        base.update(PRESETS[preset][method])
+    return {**base, **{k: v for k, v in (params or {}).items() if v is not None}}
+
 
 def ground(
     job: Job,
     *,
     method: Literal["smrf", "csf"] = "smrf",
     params: dict[str, Any] | None = None,
+    preset: str | None = None,
     keep_classes: bool = False,
     workers: int | None = None,
 ) -> GroundReport:
@@ -54,11 +85,7 @@ def ground(
     copc = job.product_path("copc", needed_by=STEP)
     ingest = job.sidecar.ingest
     assert ingest is not None
-    defaults = SMRF_DEFAULTS if method == "smrf" else CSF_DEFAULTS
-    unknown = set(params or {}) - set(defaults)
-    if unknown:
-        raise SurveyError(f"unknown {method} parameter(s): {', '.join(sorted(unknown))}")
-    chosen = {**defaults, **{k: v for k, v in (params or {}).items() if v is not None}}
+    chosen = filter_params(method, params, preset)
 
     rn = next((s for s in ingest.stats if s.name == "ReturnNumber"), None)
     normalise = rn is not None and rn.maximum == 0
@@ -106,6 +133,7 @@ def ground(
         g_density = n_ground / area if area > 0 else math.nan
         report = GroundReport(
             method=method,
+            preset=preset,
             params=chosen,
             outlier_params=OUTLIER_PARAMS,
             points=total,

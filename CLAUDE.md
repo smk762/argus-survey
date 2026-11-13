@@ -4,9 +4,19 @@ Guidance for AI agents working in this repo. Human-facing usage lives in [README
 
 ## What this is
 
-A point-cloud toolkit for **land surveyors** (first audience: Western Australian civil surveyors — MGA2020 zones 49–51, PCG2020 and the other WA LSG2020 grids, AHD via AUSGeoid2020). Input is LiDAR or drone photogrammetry points (LAS/LAZ/COPC); output is what a surveyor hands over: QA report, ground classification, DTM/DSM/CHM, contours, stockpile volumes, cut/fill, profiles, change between epochs and an accuracy statement against check points (ASPRS ed. 2, NVA + VVA). Every run is traceable: every datum, operation, pipeline and argv is recorded in `job.json`.
+A point-cloud toolkit for **land surveyors** (first audience: Western Australian civil surveyors — MGA2020 zones 49–51, PCG2020 and the other WA LSG2020 grids, AHD via AUSGeoid2020). Input is LiDAR, drone photogrammetry or terrestrial-scanner points (LAS/LAZ/COPC, E57); output is what a surveyor hands over: QA report, ground classification, DTM/DSM/CHM, contours, stockpile volumes, cut/fill, profiles, change between epochs and an accuracy statement against check points (ASPRS ed. 2, NVA + VVA). Every run is traceable: every datum, operation, pipeline and argv is recorded in `job.json`.
 
 It is judged on **correct datums, honest accuracy numbers and reproducible outputs**, not visuals. Prefer one deliverable done properly over three done loosely. It is a standalone peer in the Argus suite (port **8107**); its rasters are plain GeoTIFFs that `argus-atlas controls --dem` can consume. No code dependency on atlas.
+
+## Argus suite
+<!-- argus-suite: keep this block; argus-ci checks for it -->
+This repo is part of the Argus suite. The suite map below lists every sibling and what it owns; check it before
+building something a sibling may already do. **On every release, update this repo's row and capabilities in
+argus-cortex's SUITE.md** (a PR to argus-cortex in the same release).
+
+@../argus-core/SUITE.md
+
+Not checked out? Read https://github.com/smk762/argus-cortex/blob/main/SUITE.md
 
 ## Toolchain (read before touching Docker/CI)
 
@@ -19,13 +29,13 @@ It is judged on **correct datums, honest accuracy numbers and reproducible outpu
 
 `src/argus_survey/`:
 
-- `models.py` — Pydantic v2 wire types. **`JobSidecar` (`job.json`) is the API contract.** `SURVEY_VERSION` is its schema version.
+- `models.py` — Pydantic v2 wire types. **`JobSidecar` (`job.json`) is the API contract.** `SURVEY_VERSION` is its schema version. The API request bodies, `HealthInfo` and the SSE event payloads live here too; `WIRE_MODELS` → `schema/survey-wire.schema.json` (`argus-survey schema`; `tests/test_wire.py` fails when it is stale). [argus-sightline](../argus-sightline) generates its TypeScript types from that file, so a wire change means: regenerate, commit, then `npm run wire:local ../argus-survey` (or `wire:pull` after a tag) there.
 - `config.py` — `SURVEY_*` env knobs, `process_allowed()`, `resolve_under_root()` (the API's path fence, ported from atlas).
 - `tools.py` — **the one subprocess runner** (`run`, `run_json`, `pdal_pipeline`), `versions()`, PROJ search paths/grid lookup, `doctor()`.
 - `crs.py` — `select_operation()`: explicit coordinate-operation choice (see gotchas); `record_from_projjson()` (compound/3D/BoundCRS/foot units → `CrsRecord`), `pdal_coord_op()` (axis-order compensation), `promote_3d()`, `require_metric()`, `lonlat_bbox()`.
 - `jobs.py` — `JobStore`, strict id charset, and `Job`: `sink` (runner → sidecar, persisted per command), `add_product` (SHA256), `step()` (timings), `require_crs(height=)` (rule 1's refusal).
 - `ingest.py` — `info_report`, `ingest`: pin inputs, resolve source CRS (`--s-srs`, `--assume-vertical EPSG:x|ellipsoidal`), resolve target (`--t-srs`; a 2D target keeps the source heights explicitly), select the operation, then per input a **streaming** PDAL pipeline (projpipeline → crop → stats → LAZ) and **untwine** → `points.copc.laz`; counts reconciled, LiDAR/photogrammetry detected from returns/RGB.
-- `synthetic.py` — seeded analytic scenes (tilted plane, cone stockpile πr²h/3, building, trees; truth in `UserData`) and check points; `argus-survey synth`. The test fixtures *and* the demo data.
+- `synthetic.py` — seeded analytic scenes (tilted plane, cone stockpile πr²h/3, building, trees; truth in `UserData`) and check points; `argus-survey synth`. The test fixtures *and* the demo data. `write_kit` (`synth DIR --kit`) writes every input the UI's guided demo needs plus `kit-truth.json`. Stockpiles and change are measured on the **DSM**: ground filtering (correctly) removes a pile from the DTM, which then reads ~10 % low on the kit's cone.
 - `grid.py` — `snap()` (origin = floor(min/res)·res, so epochs share cells), `same_grid`/`aligned`, writers.gdal and `-te/-tr` options.
 - `rasters.py` — `gdalinfo -json` facts, exact `stats()` (with `GDAL_PAM_ENABLED=NO`), `read_values()` (ENVI raw → `array`, for modest rasters), `calc()` (`gdal raster calc`), `sample()` (`gdal raster pixel-info -r bilinear`, batch), `set_crs()`.
 - `tiling.py` — buffered tiles for non-streamable PDAL filters; cores are half-open so they partition the plane, and parts **must** add up to the source count before untwine merges them.
@@ -86,6 +96,6 @@ The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docke
 - The `serve` container runs the package installed in the image: `docker compose up -d --build serve` after changing the viewer or server.
 - **Photogrammetry clouds** usually have `ReturnNumber = 0` and no classes: "first returns" selects nothing. Detect and record the source type; use all points for the DSM.
 - The conda lock includes an x86-64-v3 (AVX2) microarch marker; very old CPUs can't run the image.
-- **Branches:** `dev` is the default branch and takes feature PRs; `main` is protected and only receives `dev` → `main` release PRs. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading.
+- **Branches:** `dev` is the default branch and takes feature PRs; branch from `origin/dev` and never push to `main` directly, which must never be ahead of `dev`. A release fast-forwards `main` to a `dev` commit that passed CI (`git push origin origin/dev:main`), then tags it. If `main` is protected, the release is a reviewed PR from `dev` into `main`; its merge commit stays on `main` alone, one commit ahead of `dev` with an identical tree. That is the one exception to the rule: leave it and don't merge `main` back into `dev`. Anything else on `main` that `dev` lacks is a mistake (`git diff origin/dev origin/main` must be empty), and once `main` carries such a commit, later releases are PRs too. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading.
 - Versioning is git-tag-derived (`hatch-vcs`); `_version.py` is generated. `structlog`, Pydantic v2, ruff line-length 120. Scaffolded from `argus-pkg-template`; CI is standalone (`.github/workflows/ci.yml`).
 - Publishing (GitHub repo, PyPI, GHCR) is the owner's (smk762) job — never do it from here. Ask before adding a pip dependency beyond pydantic/structlog/typer/rich/fastapi/uvicorn/argus-cortex, or any network fetch in the server.

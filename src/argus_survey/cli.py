@@ -140,7 +140,7 @@ def _print_crs(record: CrsRecord | None, title: str = "CRS") -> None:
 
 @app.command()
 def info(
-    path: Annotated[Path, typer.Argument(help="LAS/LAZ/COPC file", exists=True, dir_okay=False)],
+    path: Annotated[Path, typer.Argument(help="LAS/LAZ/COPC/E57 file", exists=True, dir_okay=False)],
     as_json: Annotated[bool, typer.Option("--json", help="Print JSON")] = False,
 ) -> None:
     """Header summary and CRS record of a point cloud (no job is created)."""
@@ -155,10 +155,11 @@ def info(
         return
     s = report["summary"]
     b = s["bounds"]
-    console.print(
-        f"[bold]{path.name}[/] · {s['count']:,} points · LAS {s['las_version']} format {s['point_format']}"
-        + (" · COPC" if s["copc"] else "")
-    )
+    # readers.copc reports no LAS header block: say only what the reader knows
+    kind = f"LAS {s['las_version']} format {s['point_format']}" if s["las_version"] else None
+    if s["copc"]:
+        kind = f"{kind} · COPC" if kind else "COPC"
+    console.print(f"[bold]{path.name}[/] · {s['count']:,} points" + (f" · {kind}" if kind else ""))
     console.print(
         f"bounds  x {b['minx']:.3f} … {b['maxx']:.3f}   y {b['miny']:.3f} … {b['maxy']:.3f}   "
         f"z {b['minz']:.3f} … {b['maxz']:.3f}"
@@ -168,7 +169,7 @@ def info(
 
 @app.command()
 def ingest(
-    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ files or directories of them")],
+    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ/COPC/E57 files or directories of them")],
     job: JobOpt = None,
     out: OutOpt = None,
     t_srs: Annotated[
@@ -216,6 +217,12 @@ def ingest(
             f"transformation: {t.name} ({t.accuracy_m} m)" + (f" · grids {', '.join(t.grids)}" if t.grids else "")
         )
     console.print(f"source type: {record.source_type}")
+    sf = record.scale_factors
+    if sf is not None:
+        console.print(
+            f"grid to ground: k {sf.point_scale:.8f}"
+            + (f" × height factor {sf.height_factor:.8f} = combined {sf.combined:.8f}" if sf.combined else "")
+        )
     _print_crs(j.sidecar.crs, "Job CRS")
     for w in j.sidecar.warnings:
         console.print(f"[yellow]warning:[/] {w}")
@@ -223,16 +230,34 @@ def ingest(
 
 @app.command()
 def synth(
-    out: Annotated[Path, typer.Argument(help="Output .las/.laz")],
+    out: Annotated[Path, typer.Argument(help="Output .las/.laz (with --kit: the directory to fill)")],
     epoch: Annotated[int, typer.Option("--epoch", min=1, max=2, help="2: the stockpile has grown 1 m at its apex")] = 1,
     photogrammetry: Annotated[
         bool, typer.Option("--photogrammetry", help="No returns info, RGB, no ground under trees")
     ] = False,
     srs: Annotated[str, typer.Option("--srs", help="CRS written to the file, or 'none'")] = "EPSG:7850+5711",
     checks: Annotated[Path | None, typer.Option("--checks", help="Also write check points CSV here")] = None,
+    kit: Annotated[
+        bool,
+        typer.Option("--kit", help="Write every demo input into OUT: two epochs, checks, polygons, design surface"),
+    ] = False,
 ) -> None:
     """Write a synthetic survey scene with known answers (cone stockpile, building, trees) — for demos and tests."""
     from argus_survey import synthetic
+
+    if kit:
+        if epoch != 1 or photogrammetry or checks is not None:
+            raise fail(
+                SurveyError("--kit writes both epochs and checks.csv itself; drop --epoch/--photogrammetry/--checks")
+            )
+        try:
+            truth = synthetic.write_kit(out, srs=srs)
+        except (SurveyError, ValueError) as exc:
+            raise fail(SurveyError(str(exc))) from exc
+        console.print(f"wrote the demo kit to {out}/ · known answers in {out / 'kit-truth.json'}")
+        for key in ("stockpile_volume_m3", "change_gain_m3", "pad_net_cut_m3"):
+            console.print(f"  {key}: {truth[key]}")
+        return
 
     scene = synthetic.Scene(photogrammetry=photogrammetry)
     if epoch == 2:
@@ -248,7 +273,10 @@ def synth(
 
 
 WorkersOpt = Annotated[
-    int | None, typer.Option("--workers", min=1, help="Parallel tiles (default: SURVEY_WORKERS or ≤4)")
+    int | None,
+    typer.Option(
+        "--workers", min=1, help="Parallel tiles (default: SURVEY_WORKERS, else ≤4 as CPUs and ~4 GiB each allow)"
+    ),
 ]
 
 
@@ -290,6 +318,9 @@ def ground(
     job: JobOpt = None,
     out: OutOpt = None,
     method: Annotated[str, typer.Option("--method", help="smrf (default) or csf")] = "smrf",
+    preset: Annotated[
+        str | None, typer.Option("--preset", help="stockpile: SMRF slope 1.0 so steep piles stay ground")
+    ] = None,
     slope: Annotated[float | None, typer.Option(help="SMRF slope (rise/run)")] = None,
     window: Annotated[float | None, typer.Option(help="SMRF max window (m)")] = None,
     threshold: Annotated[float | None, typer.Option(help="SMRF/CSF elevation threshold (m)")] = None,
@@ -312,11 +343,11 @@ def ground(
     try:
         j = _job(job, out)
         n = len(j.sidecar.warnings)
-        r = run_ground(j, method=method, params=params, keep_classes=keep_classes, workers=workers)  # type: ignore[arg-type]
+        r = run_ground(j, method=method, params=params, preset=preset, keep_classes=keep_classes, workers=workers)  # type: ignore[arg-type]
     except SurveyError as exc:
         raise fail(exc) from exc
     console.print(
-        f"[green]ground[/] {r.method.upper()} · {r.ground_points:,} ground points ({r.ground_percent:.1f}%) · "
+        f"[green]ground[/] {r.method.upper()}{f' ({r.preset})' if r.preset else ''} · {r.ground_points:,} ground points ({r.ground_percent:.1f}%) · "
         f"ground density {r.ground_density:.2f} pts/m² (spacing {r.ground_spacing:.2f} m) · "
         f"noise {r.noise_points:,} · {r.tiles} tile(s)"
     )
@@ -337,6 +368,9 @@ def surfaces(
     dsm_method: Annotated[
         str, typer.Option("--dsm-method", help="idw (unbiased, for volumes) or max (roof edges/canopy)")
     ] = "idw",
+    chm_method: Annotated[
+        str, typer.Option("--chm-method", help="max (binned) or radius (fewer voids at fine --res, wider crowns)")
+    ] = "max",
     workers: WorkersOpt = None,
 ) -> None:
     """DTM (ground IDW), DSM (top-surface IDW or max), CHM (height above ground) on a snapped grid."""
@@ -346,7 +380,15 @@ def surfaces(
         j = _job(job, out)
         n = len(j.sidecar.warnings)
         r = run_surfaces(
-            j, res=res, dtm=dtm, dsm=dsm, chm=chm, fill_voids=fill_voids, dsm_method=dsm_method, workers=workers
+            j,
+            res=res,
+            dtm=dtm,
+            dsm=dsm,
+            chm=chm,
+            fill_voids=fill_voids,
+            dsm_method=dsm_method,
+            chm_method=chm_method,
+            workers=workers,
         )
     except SurveyError as exc:
         raise fail(exc) from exc
@@ -383,7 +425,7 @@ def contours(
 
 @app.command()
 def run(
-    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ files or directories")],
+    inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ/COPC/E57 files or directories")],
     job: JobOpt = None,
     out: OutOpt = None,
     res: Annotated[float, typer.Option("--res", help="Surface cell size (m)")] = 0.5,
@@ -397,6 +439,7 @@ def run(
     crop: Annotated[Path | None, typer.Option("--crop", help="Polygon to keep points inside")] = None,
     crop_srs: Annotated[str | None, typer.Option("--crop-srs", help="CRS of the crop polygon if it has none")] = None,
     method: Annotated[str, typer.Option("--method", help="Ground filter: smrf or csf")] = "smrf",
+    preset: Annotated[str | None, typer.Option("--preset", help="Ground preset: stockpile")] = None,
     fill_voids: Annotated[int | None, typer.Option("--fill-voids", min=1, help="Fill DTM voids up to N cells")] = None,
     workers: WorkersOpt = None,
 ) -> None:
@@ -417,6 +460,7 @@ def run(
             crop=crop,
             crop_srs=crop_srs,
             method=method,
+            preset=preset,
             fill_voids=fill_voids,
             workers=workers,
             echo=console.print,
@@ -442,6 +486,12 @@ def _print_volumes(r: VolumeReport) -> None:
             f"{z.void_percent:.2f}",
         )
     console.print(table)
+    if r.combined_scale_factor is not None:
+        console.print(
+            f"[dim]at ground (grid ÷ {r.combined_scale_factor:.8f}²): "
+            + "; ".join(f"{z.name} area {z.ground_area_m2:,.2f} m², net {z.ground_net_m3:,.2f} m³" for z in r.zones)
+            + "[/]"
+        )
     console.print(f"[dim]{r.sign_convention}[/]")
     for z in r.zones:
         console.print(
@@ -540,7 +590,7 @@ def change(
     polygon: Annotated[Path | None, typer.Option("--polygon", help="Only within these polygon(s)")] = None,
     polygon_srs: Annotated[str | None, typer.Option("--polygon-srs")] = None,
 ) -> None:
-    """DEM of difference (this job − --against) with a level of detection (change.json, dod.tif)."""
+    """DEM of difference (this job − --against) with a level of detection (change_<surface>.json, dod_<surface>.tif)."""
     from argus_survey.change import change as run_change
     from argus_survey.jobs import JobStore
 
@@ -577,10 +627,17 @@ def accuracy(
         str | None, typer.Option("--crs", help="Check points' compound CRS, e.g. EPSG:7850+5711")
     ] = None,
     checkpoint_rmse: Annotated[
-        float | None, typer.Option("--checkpoint-rmse", help="Vertical RMSE of the check point survey (m)")
+        float | None,
+        typer.Option(
+            "--checkpoint-rmse",
+            help="The check point survey's own 1σ vertical RMSE (m), as the surveyor reports it (ASPRS RMSE_V2)",
+        ),
     ] = None,
     target_class: Annotated[
-        float | None, typer.Option("--class-cm", help="ASPRS vertical accuracy class to test against (cm RMSEV)")
+        float | None,
+        typer.Option(
+            "--class-cm", help="ASPRS vertical accuracy class to test NVA against: the #-cm class, RMSEV ≤ # cm"
+        ),
     ] = None,
     surface: Annotated[str, typer.Option("--surface", help="Surface to test (dtm)")] = "dtm",
 ) -> None:
@@ -647,6 +704,30 @@ def profile(
 
 
 @app.command()
+def export(
+    job: JobOpt = None,
+    out: OutOpt = None,
+    points: Annotated[str, typer.Option("--points", help="las (LAS 1.4, uncompressed) or e57, for ReCap")] = "las",
+    polygon: Annotated[Path | None, typer.Option("--polygon", help="Keep only points inside polygon(s)")] = None,
+    polygon_srs: Annotated[str | None, typer.Option("--polygon-srs", help="CRS of the polygon if it has none")] = None,
+    thin: Annotated[
+        float | None, typer.Option("--thin", help="Keep the first point per voxel of this size (m)")
+    ] = None,
+) -> None:
+    """Point cloud for ReCap / Civil 3D (points.las or points.e57) with export notes: CRS, class legend."""
+    from argus_survey.export import export_points
+
+    try:
+        j = _job(job, out)
+        n = len(j.sidecar.warnings)
+        r = export_points(j, points, polygon=polygon, polygon_srs=polygon_srs, thin=thin)  # type: ignore[arg-type]
+    except SurveyError as exc:
+        raise fail(exc) from exc
+    console.print(f"[green]export[/] {r.points:,} points → {j.path(r.path)} (notes: {r.notes})")
+    _warnings(j, n)
+
+
+@app.command()
 def report(job: JobOpt = None, out: OutOpt = None) -> None:
     """Write the self-contained, printable report.html for a job."""
     from argus_survey.report import report as run_report
@@ -656,6 +737,34 @@ def report(job: JobOpt = None, out: OutOpt = None) -> None:
     except SurveyError as exc:
         raise fail(exc) from exc
     console.print(f"[green]report[/] {path}")
+
+
+DEFAULT_SCHEMA_PATH = Path("schema/survey-wire.schema.json")
+
+
+@app.command()
+def schema(
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the JSON Schema")
+    ] = DEFAULT_SCHEMA_PATH,
+    check: Annotated[bool, typer.Option("--check", help="Exit non-zero if the committed schema is stale (CI)")] = False,
+) -> None:
+    """Write the wire-contract JSON Schema (job.json, request bodies, SSE events) that UIs generate types from."""
+    from argus_survey.models import wire_schema_text
+
+    try:
+        rendered = wire_schema_text()
+    except ImportError as exc:  # pragma: no cover - argus-cortex ships with the server extra
+        raise fail(SurveyError("the schema needs argus-cortex: pip install argus-survey[server]")) from exc
+    if check:
+        if not output.is_file() or output.read_text(encoding="utf-8") != rendered:
+            console.print(f"[red]{output} is stale[/]: run `argus-survey schema` and commit the result")
+            raise typer.Exit(1)
+        console.print(f"{output} is up to date")
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered, encoding="utf-8")
+    console.print(f"wrote {output}")
 
 
 @app.command()

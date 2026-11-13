@@ -91,6 +91,29 @@ def test_fill_voids_and_resolution_warning(las_mga_ahd, tmp_path) -> None:  # ty
     assert dtm.void_percent > 0 and dtm.void_percent_after_fill == 0 and dtm.filled_max_distance == 40
 
 
+def test_chm_radius_fills_sparse_bins(las_mga_ahd, tmp_path, scene) -> None:  # type: ignore[no-untyped-def]
+    """At 0.2 m (~0.45 pts per cell) binned max leaves most CHM cells empty; the radius max doesn't."""
+    from argus_survey.ingest import ingest
+
+    job = JobStore(tmp_path).open("chm", create=True)
+    ingest(job, [las_mga_ahd])
+    qa(job)
+    ground(job)
+    binned = surfaces(job, res=0.2, dtm=False, dsm=False).surfaces["chm"]
+    assert binned.void_percent > 20
+    assert any("--chm-method radius" in w for w in job.sidecar.warnings)
+    r = surfaces(job, res=0.2, dtm=False, dsm=False, chm_method="radius").surfaces["chm"]
+    assert (
+        r.void_percent < 1 and r.output_type == "radius-max" and r.radius == pytest.approx(0.2 * math.sqrt(2), abs=1e-5)
+    )
+    assert "crowns widened by up to 0.283 m" in r.method
+    t = scene.trees[2]
+    chm = rasters.sample(job.product_path("chm"), [("tree", *_xy(scene, t.x, t.y))], crs="EPSG:7850")
+    assert chm["tree"] == pytest.approx(t.height, abs=0.3)
+    with pytest.raises(Exception, match="--chm-method"):
+        surfaces(job, res=0.2, dtm=False, dsm=False, chm_method="idw")
+
+
 def test_surfaces_refuse_without_vertical(las_mga_only, tmp_path) -> None:  # type: ignore[no-untyped-def]
     from argus_survey.ingest import ingest
     from argus_survey.models import SurveyError

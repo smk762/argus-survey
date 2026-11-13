@@ -12,6 +12,7 @@ registered with their SHA256, and :meth:`Job.step` times a step into the sidecar
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -22,15 +23,19 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from pydantic import ValidationError
 
 from argus_survey import __version__
 from argus_survey.models import (
     SIDECAR_NAME,
+    CommandEvent,
     CommandRecord,
     JobDigest,
     JobSidecar,
     Product,
+    StepEvent,
     SurveyError,
+    WarningEvent,
     utcnow,
 )
 from argus_survey.tools import sha256_file, versions
@@ -64,8 +69,25 @@ def load_sidecar(job_dir: Path) -> JobSidecar:
     path = job_dir / SIDECAR_NAME
     if not path.is_file():
         raise FileNotFoundError(f"no {SIDECAR_NAME} in {job_dir}")
+    text = path.read_text(encoding="utf-8")
     try:
-        return JobSidecar.model_validate_json(path.read_text(encoding="utf-8"))
+        return JobSidecar.model_validate_json(text)
+    except ValidationError as exc:
+        errors = exc.errors()
+        try:
+            doc = json.loads(text)
+            made_by = str(doc.get("package_version", "?")) if isinstance(doc, dict) else "?"
+        except ValueError:
+            made_by = "?"
+        # every problem is a field this version doesn't know, and another version wrote it: a newer argus-survey
+        # (a file this very version wrote with an unknown field is hand-edited or corrupt, not "newer")
+        if errors and made_by != __version__ and all(e["type"] == "extra_forbidden" for e in errors):
+            fields = ", ".join(".".join(str(p) for p in e["loc"]) for e in errors)
+            raise SurveyError(
+                f"{path} was written by a newer argus-survey ({made_by}; this is {__version__}): "
+                f"it has fields this version doesn't know ({fields}). Upgrade argus-survey to use this job."
+            ) from exc
+        raise SurveyError(f"invalid {path}: {exc}") from exc
     except ValueError as exc:
         raise SurveyError(f"invalid {path}: {exc}") from exc
 
@@ -118,13 +140,9 @@ class Job:
             index = len(self.sidecar.commands)
         self.emit(
             "command",
-            {
-                "index": index,
-                "step": record.step,
-                "tool": record.tool,
-                "seconds": record.seconds,
-                "returncode": record.returncode,
-            },
+            CommandEvent(
+                index=index, step=record.step, tool=record.tool, seconds=record.seconds, returncode=record.returncode
+            ).model_dump(),
         )
 
     def path(self, name: str) -> Path:
@@ -164,14 +182,14 @@ class Job:
             self.sidecar.warnings.append(message)
             log.info("job.warning", job=self.id, message=message)
             self.save()
-            self.emit("warning", {"message": message})
+            self.emit("warning", WarningEvent(message=message).model_dump())
 
     @contextmanager
     def step(self, name: str) -> Iterator[None]:
         """Time a step into ``timings`` and mark it done on success."""
         t0 = time.perf_counter()
         log.info("step.start", job=self.id, step=name)
-        self.emit("step", {"step": name, "state": "start"})
+        self.emit("step", StepEvent(step=name, state="start").model_dump(exclude_none=True))
         yield
         self.sidecar.timings[name] = round(time.perf_counter() - t0, 3)
         if name not in self.sidecar.steps_done:
@@ -179,7 +197,7 @@ class Job:
         self.sidecar.tools = versions()
         self.save()
         log.info("step.done", job=self.id, step=name, seconds=self.sidecar.timings[name])
-        self.emit("step", {"step": name, "state": "done", "seconds": self.sidecar.timings[name]})
+        self.emit("step", StepEvent(step=name, state="done", seconds=self.sidecar.timings[name]).model_dump())
 
     def require_crs(self, step: str, *, height: bool) -> None:
         """Refuse *step* without a CRS — and, for height-dependent steps, without a vertical datum (rule 1)."""

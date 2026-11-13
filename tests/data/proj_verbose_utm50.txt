@@ -1,0 +1,33 @@
+#Universal Transverse Mercator (UTM)
+#	Cyl, Ell
+#	zone= south approx
+# +proj=utm +zone=50 +south +ellps=GRS80 +units=m +no_defs
+# +break_cs2cs_recursion
+#Final Earth figure: ellipsoid
+#  Major axis (a): 6378137.000
+#  1/flattening: 298.257222
+#  squared eccentricity: 0.006694380023
+Longitude: 115d49'48"E [ 115.83 ]
+Latitude:  31d57'S [ -31.95 ]
+Easting (x):   389423.91
+Northing (y):  6464508.91
+Meridian scale (h) : 0.99975079  ( -0.02492 % error )
+Parallel scale (k) : 0.99975079  ( -0.02492 % error )
+Areal scale (s):     0.99950164  ( -0.04984 % error )
+Angular distortion (w): 0.000
+Meridian/Parallel angle: 90.00000
+Convergence : 0d37'9.128" [ 0.61920230 ]
+Max-min (Tissot axis a-b) scale error: 0.99975 0.99975
+
+Longitude: 116d12'E [ 116.2 ]
+Latitude:  32d6'S [ -32.1 ]
+Easting (x):   424516.78
+Northing (y):  6448199.93
+Meridian scale (h) : 0.99967026  ( -0.03297 % error )
+Parallel scale (k) : 0.99967026  ( -0.03297 % error )
+Areal scale (s):     0.99934064  ( -0.06594 % error )
+Angular distortion (w): 0.000
+Meridian/Parallel angle: 90.00000
+Convergence : 0d25'30.5" [ 0.42513898 ]
+Max-min (Tissot axis a-b) scale error: 0.99967 0.99967
+

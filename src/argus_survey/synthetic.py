@@ -19,6 +19,7 @@ is simple and the outputs must be reproducible byte for byte.
 from __future__ import annotations
 
 import csv
+import json
 import math
 import random
 import tempfile
@@ -190,7 +191,10 @@ def write_scene(
     srs: str | None = "EPSG:7850+5711",
     sink: CommandSink | None = None,
 ) -> Path:
-    """Write *scene* to a LAS/LAZ file at *path* with CRS *srs* (``None``: no CRS in the file)."""
+    """Write *scene* to a LAS/LAZ file at *path* with CRS *srs* (``None``: no CRS in the file).
+
+    A ``.e57`` path writes E57 (double precision; E57 has no CRS, so *srs* is ignored, and no return numbering).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     columns = COLUMNS + (RGB if scene.photogrammetry else [])
     with tempfile.TemporaryDirectory(prefix="argus-survey-synth-") as tmp:
@@ -214,6 +218,9 @@ def write_scene(
         }
         if srs is not None:
             writer_stage["a_srs"] = srs
+        if path.suffix.lower() == ".e57":
+            # single precision (the writer's default) rounds an MGA northing to ~0.5 m
+            writer_stage = {"type": "writers.e57", "filename": str(path), "double_precision": True}
         pdal_pipeline([{"type": "readers.text", "filename": str(csv_path)}, writer_stage], step="synth", sink=sink)
     return path
 
@@ -287,3 +294,96 @@ def write_check_points(points_: list[CheckPoint], path: Path) -> Path:
         for c in points_:
             writer.writerow([c.id, f"{c.x:.3f}", f"{c.y:.3f}", f"{c.z:.3f}", c.description])
     return path
+
+
+# ── demo kit: every input the workflow takes, with known answers ─────────────
+
+
+def _ring_projected(scene: Scene, pts: list[tuple[float, float]]) -> list[list[float]]:
+    e0, n0 = scene.origin
+    ring = [[round(e0 + x, 3), round(n0 + y, 3)] for x, y in pts]
+    return ring + [ring[0]]
+
+
+def _polygon_file(scene: Scene, path: Path, name: str, pts: list[tuple[float, float]], horizontal: str) -> Path:
+    """A GeoJSON polygon in the scene's projected CRS, declared with the (pre-RFC 7946) ``crs`` member GDAL reads."""
+    code = horizontal.split(":", 1)[1]
+    doc = {
+        "type": "FeatureCollection",
+        "crs": {"type": "name", "properties": {"name": f"urn:ogc:def:crs:EPSG::{code}"}},
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"name": name},
+                "geometry": {"type": "Polygon", "coordinates": [_ring_projected(scene, pts)]},
+            }
+        ],
+    }
+    path.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
+    return path
+
+
+def write_kit(out: Path, *, srs: str = "EPSG:7850+5711", sink: CommandSink | None = None) -> dict[str, object]:
+    """Write a complete demo input set into *out* and return its known answers (also written to ``kit-truth.json``).
+
+    ``site-e1.laz`` / ``site-e2.laz`` (the stockpile grew 1 m at its apex), ``checks.csv`` (30 open + 10 vegetated),
+    ``stockpile.geojson`` (a ring 1.5 m outside the cone's toe), ``pad.geojson`` + ``design.tif`` (a flat pad
+    benched 0.25 m below the ground at its centre, so cut − fill is exactly 0.25 m × the pad's area).
+    """
+    from argus_survey.tools import run
+
+    if not srs.upper().startswith("EPSG:"):
+        raise ValueError("the demo kit needs an EPSG code (e.g. EPSG:7850+5711)")
+    horizontal = srs.split("+", 1)[0]
+    out.mkdir(parents=True, exist_ok=True)
+    scene = Scene()
+    later = epoch2(scene)
+    write_scene(scene, out / "site-e1.laz", srs=srs, sink=sink)
+    write_scene(later, out / "site-e2.laz", srs=srs, sink=sink)
+    write_check_points(check_points(scene), out / "checks.csv")
+
+    cx, cy = scene.cone_centre
+    r = scene.cone_radius + 1.5
+    ring = [(cx + r * math.cos(2 * math.pi * k / 48), cy + r * math.sin(2 * math.pi * k / 48)) for k in range(48)]
+    _polygon_file(scene, out / "stockpile.geojson", "stockpile", ring, horizontal)
+
+    x0, y0, x1, y1 = 28.0, 6.0, 46.0, 26.0  # clear of the cone's toe and the building
+    _polygon_file(scene, out / "pad.geojson", "pad", [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], horizontal)
+    level = round(scene.ground_z((x0 + x1) / 2, (y0 + y1) / 2) - 0.25, 3)
+    res, margin = 0.5, 2.0
+    cols, rows = int((x1 - x0 + 2 * margin) / res), int((y1 - y0 + 2 * margin) / res)
+    e0, n0 = scene.origin
+    with tempfile.TemporaryDirectory(prefix="argus-survey-kit-") as tmp:
+        asc = Path(tmp) / "design.asc"
+        header = (
+            f"ncols {cols}\nnrows {rows}\nxllcorner {e0 + x0 - margin}\nyllcorner {n0 + y0 - margin}\n"
+            f"cellsize {res}\nNODATA_value -9999\n"
+        )
+        line = " ".join([f"{level}"] * cols)
+        asc.write_text(header + "\n".join([line] * rows) + "\n", encoding="utf-8")
+        tif = out / "design.tif"
+        run(["gdal_translate", "-q", "-of", "GTiff", "-ot", "Float32", str(asc), str(tif)], step="synth", sink=sink)
+    run(["gdal", "raster", "edit", "--crs", srs, str(tif)], step="synth", sink=sink)
+
+    pad_area = (x1 - x0) * (y1 - y0)
+    truth: dict[str, object] = {
+        "srs": srs,
+        "stockpile_volume_m3": round(scene.cone_volume, 3),
+        "stockpile_volume_epoch2_m3": round(later.cone_volume, 3),
+        "change_gain_m3": round(later.cone_volume - scene.cone_volume, 3),
+        "pad_area_m2": pad_area,
+        "pad_design_level_m": level,
+        "design_res_m": res,
+        "pad_net_cut_m3": round(0.25 * pad_area, 3),
+        "notes": [
+            "stockpile: a cone on a tilted plane; measure it on the DSM (ground filtering removes a pile from the DTM) "
+            "with a plane base",
+            "change: on the DSM, the gain before any level of detection; LoD trims the cone's shallow flanks",
+            "pad: cut minus fill (design below ground) is exactly 0.25 m times the pad area",
+            f"design.tif is on a {res} m grid: build the surfaces at --res {res}, or cut/fill refuses the misaligned "
+            "design unless --resample is given",
+            "checks: on the true ground; NVA RMSE ≈ the 0.02 m point noise, VVA reads the DTM under canopy",
+        ],
+    }
+    (out / "kit-truth.json").write_text(json.dumps(truth, indent=2) + "\n", encoding="utf-8")
+    return truth

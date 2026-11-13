@@ -18,12 +18,13 @@ Read-only by default: every POST is refused (403) by the shared
 ``/health.read_only == not allow_process``. Clients name inputs relative to
 ``SURVEY_DATA_DIR`` (resolved by :func:`~argus_survey.config.resolve_under_root`, so
 ``../`` and symlinks out are refused) and products by ``(job_id, kind)``; no route takes a
-filesystem path. The viewer's drawn profile line arrives as GeoJSON, not as a file.
+filesystem path. A drawn profile line or volume polygon arrives as GeoJSON, not as a file.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import threading
 from collections.abc import AsyncIterator, Callable
@@ -37,17 +38,37 @@ except ImportError as exc:  # pragma: no cover
     raise ImportError("Server requires: pip install argus-survey[server]") from exc
 
 from argus_cortex.server import WriteGuard
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 from argus_survey import __version__, config
 from argus_survey.jobs import Job, JobStore, is_safe_id
-from argus_survey.models import SurveyError
+from argus_survey.models import (
+    AccuracyBody,
+    ChangeBody,
+    ContoursBody,
+    CutfillBody,
+    DoneEvent,
+    EmptyBody,
+    ErrorEvent,
+    ExportBody,
+    GroundBody,
+    HealthInfo,
+    IngestBody,
+    ProfileBody,
+    QaBody,
+    RasterView,
+    RunBody,
+    StartEvent,
+    SurfacesBody,
+    SurveyError,
+    VolumeBody,
+)
 from argus_survey.tools import ToolError, versions
 
 PROCESS_REFUSAL = "processing is disabled on this host (set SURVEY_ALLOW_PROCESS=1 to enable POST /jobs/{id}/{step})"
 STATIC = Path(__file__).parent / "static"
 INPUT_KINDS = {
-    "points": (".las", ".laz"),
+    "points": (".las", ".laz", ".e57"),
     "vectors": (".geojson", ".json", ".gpkg", ".shp", ".fgb"),
     "rasters": (".tif", ".tiff", ".vrt"),
     "tables": (".csv", ".txt"),
@@ -71,105 +92,6 @@ def _refuse(allow_process: bool):  # noqa: ANN202 - argus_cortex Refuse
         return None if allow_process else PROCESS_REFUSAL
 
     return refuse
-
-
-# ── request bodies (inputs are names under SURVEY_DATA_DIR) ──────────────────
-
-
-class _Body(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class IngestBody(_Body):
-    inputs: list[str] = Field(min_length=1)
-    t_srs: str | None = None
-    s_srs: str | None = None
-    assume_vertical: str | None = None
-    operation: str | None = None
-    crop: str | None = None
-    crop_srs: str | None = None
-    force: bool = False
-
-
-class QaBody(_Body):
-    density_res: float = Field(default=1.0, gt=0)
-    min_density: float | None = Field(default=None, ge=0)
-
-
-class GroundBody(_Body):
-    method: str = "smrf"
-    params: dict[str, float | int | bool] = Field(default_factory=dict)
-    keep_classes: bool = False
-
-
-class SurfacesBody(_Body):
-    res: float = Field(default=0.5, gt=0)
-    dtm: bool = True
-    dsm: bool = True
-    chm: bool = True
-    fill_voids: int | None = Field(default=None, ge=1)
-    dsm_method: str = "idw"
-
-
-class ContoursBody(_Body):
-    interval: float = Field(default=0.5, gt=0)
-    index: int | None = 5
-
-
-class VolumeBody(_Body):
-    polygon: str
-    base: str = "plane"  # plane | lowest-perimeter | surface:<name under the data root>
-    surface: str = "dtm"
-    polygon_srs: str | None = None
-    allow_voids: bool = False
-    resample: bool = False
-    base_vertical: str | None = None
-
-
-class CutfillBody(_Body):
-    design: str
-    polygon: str | None = None
-    polygon_srs: str | None = None
-    surface: str = "dtm"
-    design_vertical: str | None = None
-    resample: bool = False
-    allow_voids: bool = False
-
-
-class ChangeBody(_Body):
-    against: str
-    lod: float | None = Field(default=None, ge=0)
-    lod_from_accuracy: bool = False
-    surface: str = "dtm"
-    polygon: str | None = None
-    polygon_srs: str | None = None
-
-
-class AccuracyBody(_Body):
-    checks: str
-    crs: str
-    cols: list[str] = Field(default_factory=lambda: ["id", "x", "y", "z"], min_length=4, max_length=4)
-    checkpoint_rmse: float | None = Field(default=None, ge=0)
-    class_cm: float | None = Field(default=None, gt=0)
-    surface: str = "dtm"
-
-
-class ProfileBody(_Body):
-    line: dict[str, Any] | None = None  # a GeoJSON LineString geometry in WGS 84 (lon, lat), e.g. drawn on the map
-    line_file: str | None = None  # or a line file under the data root
-    line_srs: str | None = None
-    step: float = Field(default=0.5, gt=0)
-
-
-class RunBody(IngestBody):
-    res: float = Field(default=0.5, gt=0)
-    interval: float = Field(default=0.5, gt=0)
-    method: str = "smrf"
-    fill_voids: int | None = Field(default=None, ge=1)
-
-
-class EmptyBody(_Body):
-    pass
 
 
 def create_app(
@@ -229,13 +151,7 @@ def create_app(
     # ── reads ──
     @app.get("/health")
     def health() -> dict[str, Any]:
-        return {
-            "status": "ok",
-            "service": "argus-survey",
-            "version": __version__,
-            "read_only": not allow,
-            "tools": versions().model_dump(),
-        }
+        return HealthInfo(version=__version__, read_only=not allow, tools=versions()).model_dump(mode="json")
 
     @app.get("/doctor")
     def doctor() -> dict[str, Any]:
@@ -276,7 +192,7 @@ def create_app(
             meta = overlays.raster_overlay(j, kind)
         except SurveyError as exc:
             raise HTTPException(404, str(exc)) from exc
-        return {**meta, "url": f"/jobs/{job_id}/web/{kind}/image"}
+        return RasterView.model_validate({**meta, "url": f"/jobs/{job_id}/web/{kind}/image"}).model_dump(mode="json")
 
     @app.get("/jobs/{job_id}/web/{kind}/image")
     def web_image(job_id: str, kind: str) -> FileResponse:
@@ -311,6 +227,7 @@ def create_app(
         from argus_survey.accuracy import accuracy
         from argus_survey.change import change
         from argus_survey.contours import contours
+        from argus_survey.export import export_points
         from argus_survey.ground import ground
         from argus_survey.ingest import ingest
         from argus_survey.pipeline import run_all
@@ -324,21 +241,73 @@ def create_app(
             kind, _, name = b.base.partition(":")
             return f"surface:{data_path(name, 'base surface')}" if kind == "surface" else b.base
 
+        def drawn_file(j: Job, stem: str, name: str, geom: dict[str, Any]) -> Path:
+            """A drawn WGS 84 geometry as a GeoJSON file in the job dir, named by its content so the argv recorded
+            in ``job.json`` keeps pointing at the exact geometry used (a later drawing never overwrites it)."""
+            text = json.dumps(
+                {
+                    "type": "FeatureCollection",
+                    "features": [{"type": "Feature", "properties": {"name": name}, "geometry": geom}],
+                },
+                sort_keys=True,
+            )
+            path = j.path(f".{stem}-{hashlib.sha256(text.encode()).hexdigest()[:16]}.geojson")
+            if not path.is_file():
+                path.write_text(text, encoding="utf-8")
+            return path
+
+        def zone(j: Job, b: VolumeBody | CutfillBody, *, required: bool) -> tuple[Path | None, str | None]:
+            """The polygon file and its CRS: a named file under the data root, or a drawn WGS 84 geometry."""
+            if b.polygon is not None and b.polygon_geojson is not None:
+                raise SurveyError("give polygon (a file) or polygon_geojson (a drawn geometry), not both")
+            if b.polygon_geojson is None:
+                if required and b.polygon is None:
+                    raise SurveyError("give polygon (a file under the data root) or polygon_geojson (drawn, WGS 84)")
+                if b.name is not None:
+                    raise SurveyError(
+                        "name applies to a drawn polygon (polygon_geojson); a file's zones keep their names"
+                    )
+                return opt_path(b.polygon, "polygon"), b.polygon_srs
+            if b.polygon_srs is not None:
+                raise SurveyError("polygon_geojson is always WGS 84 (EPSG:4326); polygon_srs applies to a polygon file")
+            geom = b.polygon_geojson
+            if geom.get("type") not in {"Polygon", "MultiPolygon"} or not geom.get("coordinates"):
+                raise SurveyError("polygon_geojson must be a GeoJSON Polygon or MultiPolygon geometry")
+            return drawn_file(j, "drawn-polygon", b.name or "drawn polygon", geom), "EPSG:4326"
+
+        def volume_run(j: Job, b: VolumeBody) -> Any:
+            poly, srs = zone(j, b, required=True)
+            return volume(
+                j,
+                poly,  # type: ignore[arg-type]
+                base=base_arg(b),
+                surface=b.surface,
+                polygon_srs=srs,
+                allow_voids=b.allow_voids,
+                resample=b.resample,
+                base_vertical=b.base_vertical,
+            )
+
+        def cutfill_run(j: Job, b: CutfillBody) -> Any:
+            poly, srs = zone(j, b, required=False)
+            return cutfill(
+                j,
+                data_path(b.design, "design"),
+                polygon=poly,
+                polygon_srs=srs,
+                surface=b.surface,
+                design_vertical=b.design_vertical,
+                resample=b.resample,
+                allow_voids=b.allow_voids,
+            )
+
         def profile_run(j: Job, b: ProfileBody) -> Any:
             if (b.line is None) == (b.line_file is None):
                 raise SurveyError("give exactly one of line (GeoJSON geometry, WGS 84) or line_file")
             if b.line is not None:
                 if b.line.get("type") != "LineString" or len(b.line.get("coordinates") or []) < 2:
                     raise SurveyError("line must be a GeoJSON LineString with at least two positions")
-                path = j.path(".drawn-line.geojson")
-                path.write_text(
-                    json.dumps(
-                        {
-                            "type": "FeatureCollection",
-                            "features": [{"type": "Feature", "properties": {"name": "drawn line"}, "geometry": b.line}],
-                        }
-                    )
-                )
+                path = drawn_file(j, "drawn-line", "drawn line", b.line)
                 return profile(j, path, step=b.step, line_srs="EPSG:4326")
             return profile(j, data_path(b.line_file, "line_file"), step=b.step, line_srs=b.line_srs)  # type: ignore[arg-type]
 
@@ -361,45 +330,26 @@ def create_app(
             "qa": (QaBody, lambda j, b: qa(j, density_res=b.density_res, min_density=b.min_density), False),
             "ground": (
                 GroundBody,
-                lambda j, b: ground(j, method=b.method, params=b.params, keep_classes=b.keep_classes),
+                lambda j, b: ground(j, method=b.method, params=b.params, preset=b.preset, keep_classes=b.keep_classes),
                 False,
             ),
             "surfaces": (
                 SurfacesBody,
                 lambda j, b: surfaces(
-                    j, res=b.res, dtm=b.dtm, dsm=b.dsm, chm=b.chm, fill_voids=b.fill_voids, dsm_method=b.dsm_method
+                    j,
+                    res=b.res,
+                    dtm=b.dtm,
+                    dsm=b.dsm,
+                    chm=b.chm,
+                    fill_voids=b.fill_voids,
+                    dsm_method=b.dsm_method,
+                    chm_method=b.chm_method,
                 ),
                 False,
             ),
             "contours": (ContoursBody, lambda j, b: contours(j, interval=b.interval, index=b.index), False),
-            "volume": (
-                VolumeBody,
-                lambda j, b: volume(
-                    j,
-                    data_path(b.polygon, "polygon"),
-                    base=base_arg(b),
-                    surface=b.surface,
-                    polygon_srs=b.polygon_srs,
-                    allow_voids=b.allow_voids,
-                    resample=b.resample,
-                    base_vertical=b.base_vertical,
-                ),
-                False,
-            ),
-            "cutfill": (
-                CutfillBody,
-                lambda j, b: cutfill(
-                    j,
-                    data_path(b.design, "design"),
-                    polygon=opt_path(b.polygon, "polygon"),
-                    polygon_srs=b.polygon_srs,
-                    surface=b.surface,
-                    design_vertical=b.design_vertical,
-                    resample=b.resample,
-                    allow_voids=b.allow_voids,
-                ),
-                False,
-            ),
+            "volume": (VolumeBody, volume_run, False),
+            "cutfill": (CutfillBody, cutfill_run, False),
             "change": (
                 ChangeBody,
                 lambda j, b: change(
@@ -427,6 +377,13 @@ def create_app(
                 False,
             ),
             "profile": (ProfileBody, profile_run, False),
+            "export": (
+                ExportBody,
+                lambda j, b: export_points(
+                    j, b.points, polygon=opt_path(b.polygon, "polygon"), polygon_srs=b.polygon_srs, thin=b.thin
+                ),
+                False,
+            ),
             "report": (EmptyBody, lambda j, _b: report(j), False),
             "run": (
                 RunBody,
@@ -442,6 +399,7 @@ def create_app(
                     crop=opt_path(b.crop, "crop"),
                     crop_srs=b.crop_srs,
                     method=b.method,
+                    preset=b.preset,
                     fill_voids=b.fill_voids,
                     echo=lambda _m: None,
                 ),
@@ -479,25 +437,25 @@ def create_app(
         def work() -> None:
             j.listeners.append(put)
             try:
-                put("start", {"job": job_id, "step": step})
+                put("start", StartEvent(job=job_id, step=step).model_dump())
                 result = runner(j, parsed)
                 payload = result.model_dump(mode="json") if isinstance(result, BaseModel) else {"result": str(result)}
-                put(
-                    "done",
-                    {
-                        "job": job_id,
-                        "step": step,
-                        "result": payload,
-                        "products": sorted(j.sidecar.products),
-                        "warnings": j.sidecar.warnings,
-                    },
+                done = DoneEvent(
+                    job=job_id,
+                    step=step,
+                    result=payload,
+                    products=sorted(j.sidecar.products),
+                    warnings=j.sidecar.warnings,
                 )
+                put("done", done.model_dump(mode="json"))
             except ToolError as exc:
-                put("error", {"message": str(exc), "stderr": exc.stderr_tail[-2000:]})
+                put("error", ErrorEvent(message=str(exc), stderr=exc.stderr_tail[-2000:]).model_dump())
             except (SurveyError, HTTPException) as exc:
-                put("error", {"message": exc.detail if isinstance(exc, HTTPException) else str(exc)})
+                msg = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                put("error", ErrorEvent(message=msg).model_dump(exclude_none=True))
             except Exception as exc:  # noqa: BLE001 - surfaced to the client, logged by structlog upstream
-                put("error", {"message": f"internal error: {exc.__class__.__name__}: {exc}"})
+                msg = f"internal error: {exc.__class__.__name__}: {exc}"
+                put("error", ErrorEvent(message=msg).model_dump(exclude_none=True))
             finally:
                 j.listeners.remove(put)
                 with busy_lock:

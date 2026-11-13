@@ -1,16 +1,7 @@
 # TODO
 
-Follow-ups beyond v0.1.0, most-requested first.
+Outstanding work is tracked as GitHub issues:
 
-- **CAD export: LandXML surfaces + DXF contours/breaklines.** Surveyors will ask for this first.
-- **Grid-to-ground scale**: report the combined scale factor (point scale × height factor) at the site
-  centroid, and offer ground-scaled areas/volumes alongside grid ones.
-- Breaklines (kerbs, toes, crests) honoured in the DTM.
-- TIN-based volumes (prism method) alongside the grid method, for comparison with 12d / Civil 3D.
-- Vertical transformation of rasters (design surfaces in another height datum), today refused.
-- M3C2 change detection (point-to-point with local uncertainty) beyond the DEM of difference.
-- Classification beyond ground (buildings, vegetation heights, power lines).
-- CHM on a radius rather than strict bins at fine resolutions (sparse canopy leaves binned voids).
-- E57 ingest (terrestrial scanners): PDAL's E57 plugin is already in the image.
-- Report as PDF directly (today: print the HTML).
-- Photogrammetry ingest (images → points).
+- [v0.1.0 milestone](https://github.com/smk762/argus-survey/milestone/1) — validation on real WA data, ASPRS ed. 2 details, release.
+- [Autodesk interoperability milestone](https://github.com/smk762/argus-survey/milestone/2) — LandXML surfaces in/out, DXF linework, ReCap point clouds, Autodesk coordinate system codes, alignments, Civil 3D round trip.
+- [Enhancements](https://github.com/smk762/argus-survey/issues?q=is%3Aopen+label%3Aenhancement+no%3Amilestone) — grid-to-ground scale, breaklines, TIN volumes, vertical transformation of rasters, M3C2, classification, stockpile ground preset, CHM, E57, PDF report, photogrammetry.
