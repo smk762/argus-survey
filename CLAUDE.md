@@ -8,6 +8,16 @@ A point-cloud toolkit for **land surveyors** (first audience: Western Australian
 
 It is judged on **correct datums, honest accuracy numbers and reproducible outputs**, not visuals. Prefer one deliverable done properly over three done loosely. It is a standalone peer in the Argus suite (port **8107**); its rasters are plain GeoTIFFs that `argus-atlas controls --dem` can consume. No code dependency on atlas.
 
+## Argus suite
+<!-- argus-suite: keep this block; argus-ci checks for it -->
+This repo is part of the Argus suite. The suite map below lists every sibling and what it owns; check it before
+building something a sibling may already do. **On every release, update this repo's row and capabilities in
+argus-cortex's SUITE.md** (a PR to argus-cortex in the same release).
+
+@../argus-core/SUITE.md
+
+Not checked out? Read https://github.com/smk762/argus-cortex/blob/main/SUITE.md
+
 ## Toolchain (read before touching Docker/CI)
 
 - **PDAL, GDAL and PROJ come from conda-forge**, pinned by `env/geo-linux-64.lock` (explicit URLs + md5), generated from `env/geo.yml` by `make geo-lock`. PDAL is not packaged by Debian or Ubuntu (24.04 and 26.04 both lack it), so "apt install pdal" is not an option; one conda-forge stack also guarantees PDAL links the same GDAL/PROJ whose CLIs we call. The image is `ubuntu:26.04` + that env at `/opt/geo` + Ubuntu's Python 3.14 in `/opt/venv`.
@@ -86,6 +96,6 @@ The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docke
 - The `serve` container runs the package installed in the image: `docker compose up -d --build serve` after changing the viewer or server.
 - **Photogrammetry clouds** usually have `ReturnNumber = 0` and no classes: "first returns" selects nothing. Detect and record the source type; use all points for the DSM.
 - The conda lock includes an x86-64-v3 (AVX2) microarch marker; very old CPUs can't run the image.
-- **Branches:** `dev` is the default branch and takes feature PRs; `main` is protected and only receives `dev` → `main` release PRs. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading.
+- **Branches:** `dev` is the default branch and takes feature PRs; branch from `origin/dev` and never push to `main` directly, which must never be ahead of `dev`. A release fast-forwards `main` to a `dev` commit that passed CI (`git push origin origin/dev:main`), then tags it. If `main` is protected, the release is a reviewed PR from `dev` into `main`; its merge commit stays on `main` alone, one commit ahead of `dev` with an identical tree. That is the one exception to the rule: leave it and don't merge `main` back into `dev`. Anything else on `main` that `dev` lacks is a mistake (`git diff origin/dev origin/main` must be empty), and once `main` carries such a commit, later releases are PRs too. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading.
 - Versioning is git-tag-derived (`hatch-vcs`); `_version.py` is generated. `structlog`, Pydantic v2, ruff line-length 120. Scaffolded from `argus-pkg-template`; CI is standalone (`.github/workflows/ci.yml`).
 - Publishing (GitHub repo, PyPI, GHCR) is the owner's (smk762) job — never do it from here. Ask before adding a pip dependency beyond pydantic/structlog/typer/rich/fastapi/uvicorn/argus-cortex, or any network fetch in the server.

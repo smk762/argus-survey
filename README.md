@@ -109,11 +109,12 @@ so the choice can be checked.
 | `export --points las\|e57 [--polygon P] [--thin S]` | `points.las` (LAS 1.4, uncompressed) or `points.e57` for ReCap / Civil 3D, plus notes (CRS, class legend) |
 | `report` | `report.html` |
 | `run FILES…` | ingest → qa → ground → surfaces → contours → report |
-| `synth OUT.laz` | a synthetic scene with known answers (`--kit DIR`: every demo input, see `kit-truth.json`) |
+| `synth OUT.laz` / `synth DIR --kit` | a synthetic scene with known answers; with `--kit`, every demo input written into `DIR` (truth in `kit-truth.json`; `--kit` can't be combined with `--epoch`, `--photogrammetry` or `--checks`) |
 | `schema` | write the wire-contract JSON Schema UIs generate types from (`--check` in CI) |
 | `serve` | API + viewer on :8107 |
 
-Run any of them with `--help`. All of them take `--job ID` (under `SURVEY_JOBS_DIR`) or `--out DIR`.
+Run any of them with `--help`. All job commands (everything except `doctor`, `info`, `synth`, `schema` and
+`serve`) take `--job ID` (under `SURVEY_JOBS_DIR`) or `--out DIR`.
 
 ## How the numbers are made
 
@@ -127,16 +128,19 @@ Run any of them with `--help`. All of them take `--job ID` (under `SURVEY_JOBS_D
   cells weighted by the fraction inside the polygon (`gdal raster zonal-stats --pixels fractional`). A plane
   base is a least-squares fit to surface heights sampled along the polygon boundary, with its RMS reported.
   More than 5 % voids in a polygon is refused unless you accept it.
-- **Change**: later − earlier; |Δ| below the level of detection is "no detectable change". The LoD is given,
-  or 1.96·√(σ₁² + σ₂²) from both epochs' accuracy statements.
+- **Change**: later − earlier; |Δ| below the level of detection is "no detectable change". The LoD is given
+  (`--lod`), or 1.96·√(σ₁² + σ₂²) from both epochs' accuracy statements (`--lod-from-accuracy`); with neither
+  it defaults to 0.10 m, and `change.json`'s `lod_rule` says `default 0.1 m`.
 - **Accuracy**: ASPRS Positional Accuracy Standards, Edition 2, Version 2 (2024), checked against the
-  standard's text: RMSE only (Edition 1's 95 % figure is gone); the class is free-valued ("#-cm", NVA
-  RMSE_V ≤ #) and given with `--class-cm`; product RMSE_V = √(RMSE_V1² + RMSE_V2²) (§7.12.4), where
-  `--checkpoint-rmse` is the surveyor's 1σ vertical RMSE; NVA pass/fail, VVA reported as found; min, max,
-  mean, median, std and RMSE (§7.16); residuals beyond 3 × the target RMSE listed as blunders and a mean
-  above 25 % of it flagged as bias (§7.2). Statements use §7.16.1's wording, including its
-  reduced-checkpoint statement below 30 points. Check points are given in a stated CRS and transformed
-  through the same explicit operation machinery. Residuals are surface − check.
+  standard's text: RMSE only (Edition 1's 95 % figure is gone); the class is free-valued ("#-cm", NVA RMSE_V ≤
+  #) and given with `--class-cm`; product RMSE_V = √(RMSE_V1² + RMSE_V2²) (§7.12.4), where `--checkpoint-rmse`
+  is the surveyor's 1σ vertical RMSE; NVA pass/fail, VVA reported as found; min, max, mean, median, std and
+  RMSE (§7.16); residuals beyond 3 × the target RMSE listed as blunders and a mean above 25 % of it flagged as
+  bias (§7.2). Statements use §7.16.1's wording, including its reduced-checkpoint statement below 30 points. A
+  check point is VVA only when the CSV's optional `description` column starts with `veg` or `vva`
+  (case-insensitive); every other point, including one with an empty or missing description, is NVA and is
+  pass/fail tested. Check points are given in a stated CRS and transformed through the same explicit operation
+  machinery. Residuals are surface − check.
 - **Drone-scale data**: ingest streams; the COPC is built out of core by untwine; filters that need
   neighbours (outliers, SMRF/CSF, height above ground) run on buffered tiles whose cores partition the site
   exactly — the tiles must add up to the source's point count before they are merged.
@@ -155,6 +159,32 @@ alongside the grid values.
 `SURVEY_ALLOW_PROCESS=1` to enable `POST /jobs/{id}/{step}`, which streams Server-Sent Events (each command,
 warning, and the result). Inputs are named relative to `SURVEY_DATA_DIR`; products are fetched by
 `(job id, kind)` with HTTP range support, so the viewer streams the COPC straight from the API.
+
+| Route | Returns |
+|---|---|
+| `GET /health` | `{status, service, version, read_only, tools}`; `read_only` is `not SURVEY_ALLOW_PROCESS` |
+| `GET /doctor` | the toolchain report (as `argus-survey doctor`) |
+| `GET /inputs` | point clouds, vectors, rasters and CSVs under `SURVEY_DATA_DIR`, by name |
+| `GET /jobs` | `{jobs: [JobDigest]}` |
+| `GET /jobs/{id}` | the sidecar (`job.json`) |
+| `GET /jobs/{id}/{kind}` | a product by kind (`copc`, `dtm`, `report`, …), with HTTP Range |
+| `GET /jobs/{id}/web/{kind}` | map view: a raster → `{url, lon/lat corners}`; a vector → WGS 84 GeoJSON |
+| `GET /jobs/{id}/web/{kind}/image` | the map view's EPSG:3857 PNG |
+| `POST /jobs/{id}/{step}` | run a step (403 unless processing is allowed; 409 while the job is busy) |
+| `GET /viewer` (`/` redirects) | the viewer |
+
+`{step}` is one of `ingest`, `qa`, `ground`, `surfaces`, `contours`, `volume`, `cutfill`, `change`, `accuracy`,
+`profile`, `report` or `run`, each with a JSON body whose fields mirror the CLI options (`IngestBody`,
+`QaBody`, … `RunBody`; `report` takes `{}`). Two differences from the CLI: `volume` and `cutfill` accept a
+drawn `polygon_geojson` (a WGS 84 Polygon/MultiPolygon geometry) instead of a `polygon` file, and `profile`
+takes a drawn `line` (a WGS 84 LineString) or a `line_file`; drawn geometry is saved in the job dir under a
+content hash so the recorded argv keeps pointing at it. `ingest` and `run` create the job; the other steps
+need it to exist. The response is an SSE stream of `start`, `step`, `command`, `warning`, then `done` (the
+step's result, product kinds, warnings) or `error`.
+
+The request bodies, `HealthInfo`, the SSE payloads and `job.json` are all in one JSON Schema,
+[`schema/survey-wire.schema.json`](schema/survey-wire.schema.json) (regenerate with `argus-survey schema`);
+generate client types from it rather than from this table.
 
 The viewer (`/viewer`) shows the hillshade, surfaces, density, change, contours and coverage on a map, the
 classified cloud in 3D (coloured by elevation, class or intensity), the job's CRS and warnings, and — when

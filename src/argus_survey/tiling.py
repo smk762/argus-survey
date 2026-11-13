@@ -7,6 +7,10 @@ the neighbourhood it needs at the tile edge), processed, and then trimmed to its
 **core** with a half-open test (``X >= x0 && X < x1``): the cores partition the
 plane, so every point is written exactly once. That invariant is checked — the
 parts must add up to the source count — before untwine merges them into one COPC.
+
+The outer edges reach ``EDGE`` beyond the bounds on every side: recorded bounds come from
+PDAL's JSON, which keeps ~10 significant digits (±0.5 mm on an MGA northing), so a point
+on the true minimum can lie just below the recorded one.
 """
 
 from __future__ import annotations
@@ -26,13 +30,47 @@ from argus_survey.tools import pdal_pipeline, run, run_json
 
 TARGET_POINTS = 8_000_000
 MIN_TILE = 50.0  # metres; smaller tiles mean more buffer overhead than they save
+EDGE = 0.01  # metres past the recorded bounds; far more than their rounding, far less than any buffer
 
 
-def default_workers() -> int:
+# Measured on a 102M-point drone LiDAR cloud (TERN WAACOO0001, 15 tiles of ~70 m + 27 m buffer):
+# one SMRF tile peaked at 3.5 GiB RSS and untwine at 1.2 GiB; 4 workers ran ground 3.1x faster than 1.
+WORKER_BYTES = 4 << 30  # per parallel tile at TARGET_POINTS, with headroom
+RESERVE_BYTES = 2 << 30  # untwine, the Python process, page cache
+MAX_WORKERS = 4
+
+
+def memory_limit() -> int | None:
+    """Bytes this process may use: the cgroup v2 limit if one is set (containers), else physical RAM."""
+    try:
+        raw = Path("/sys/fs/cgroup/memory.max").read_text().strip()
+        if raw.isdigit():
+            return int(raw)
+    except OSError:
+        pass
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def _cpus() -> int:
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # not Linux
+        return os.cpu_count() or 1
+
+
+def default_workers(*, memory: int | None = None, cpus: int | None = None) -> int:
+    """``SURVEY_WORKERS`` if set, else ≤ 4 tiles at once, as many as the CPUs and memory allow."""
     env = os.environ.get("SURVEY_WORKERS")
     if env and env.isdigit() and int(env) > 0:
         return int(env)
-    return max(1, min(4, os.cpu_count() or 1))
+    n = min(MAX_WORKERS, cpus or _cpus())
+    mem = memory if memory is not None else memory_limit()
+    if mem is not None:
+        n = min(n, (mem - RESERVE_BYTES) // WORKER_BYTES)
+    return max(1, n)
 
 
 @dataclass(frozen=True)
@@ -66,22 +104,23 @@ class TilePlan:
 def plan(bounds: Bounds3D, count: int, *, buffer: float, target_points: int | None = None) -> TilePlan:
     """Square tiles of ~*target_points* (default ``TARGET_POINTS``) each over *bounds* (one tile when small)."""
     target_points = target_points or TARGET_POINTS
-    w = max(bounds.maxx - bounds.minx, 1e-3)
-    h = max(bounds.maxy - bounds.miny, 1e-3)
+    # the outer edges sit EDGE outside the (rounded) bounds, so the half-open cores cover every point
+    minx, miny = bounds.minx - EDGE, bounds.miny - EDGE
+    maxx, maxy = bounds.maxx + EDGE, bounds.maxy + EDGE
+    w, h = maxx - minx, maxy - miny
     if count <= target_points:
-        size = max(w, h) + 1e-3
+        size = max(w, h)
     else:
         size = max(MIN_TILE, math.sqrt(w * h * target_points / count))
-    nx = max(1, math.ceil((w + 1e-3) / size))
-    ny = max(1, math.ceil((h + 1e-3) / size))
+    nx = max(1, math.ceil(w / size))
+    ny = max(1, math.ceil(h / size))
     tiles = []
     for ix in range(nx):
         for iy in range(ny):
-            x0 = bounds.minx + ix * size
-            y0 = bounds.miny + iy * size
-            # the last row/column reaches just past the max so the half-open test keeps the max point
-            x1 = bounds.maxx + 1e-3 if ix == nx - 1 else x0 + size
-            y1 = bounds.maxy + 1e-3 if iy == ny - 1 else y0 + size
+            x0 = minx + ix * size
+            y0 = miny + iy * size
+            x1 = maxx if ix == nx - 1 else x0 + size
+            y1 = maxy if iy == ny - 1 else y0 + size
             tiles.append(Tile(ix, iy, (x0, y0, x1, y1), buffer))
     return TilePlan(tiles=tiles, size=size, buffer=buffer)
 

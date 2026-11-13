@@ -105,6 +105,22 @@ def test_change_matches_injected_growth(epochs, tmp_path) -> None:  # type: igno
     assert j2.product_path("dod_lod").is_file()
 
 
+def test_change_keeps_each_surface(epochs) -> None:  # type: ignore[no-untyped-def]
+    """A DTM comparison after a DSM one must not overwrite it (real Floreat data lost its DSM DoD that way)."""
+    _, _, j1, j2 = epochs
+    dsm = change(j2, j1, surface="dsm", lod=0.10)
+    dtm = change(j2, j1, surface="dtm", lod=0.10)
+    assert [c.surface for c in j2.sidecar.changes] == ["dsm", "dtm"]
+    assert j2.sidecar.change == dtm and j2.sidecar.changes[0] == dsm
+    for kind in ("dod_dsm", "dod_dsm_lod", "change_dsm", "dod_dtm", "dod_dtm_lod", "change_dtm"):
+        assert j2.product_path(kind).is_file(), kind
+    assert j2.sidecar.products["dod_lod"].path == "dod_dtm_lod.tif"  # the plain kinds follow the latest run
+    again = change(j2, j1, surface="dsm", lod=0.2)  # a rerun replaces that surface's entry
+    assert [c.surface for c in j2.sidecar.changes] == ["dtm", "dsm"] and j2.sidecar.changes[1] == again
+    with pytest.raises(SurveyError, match="dtm or dsm"):
+        change(j2, j1, surface="chm")
+
+
 def test_change_refuses_misaligned_grids(epochs, tmp_path, las_mga_ahd) -> None:  # type: ignore[no-untyped-def]
     _, _, j1, _ = epochs
     other = processed(tmp_path, "coarse", las_mga_ahd, res=0.3)

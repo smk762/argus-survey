@@ -1,5 +1,17 @@
 # argus-survey — v0 spec and build brief
 
+> **Historical.** This is the brief the v0 build started from, kept for the record. It is **not** a description
+> of the shipped package: where it and the code disagree, the code, [README.md](README.md) and
+> [CHANGELOG.md](CHANGELOG.md) are right. Known divergences:
+>
+> - **§2 Image / CI / raster engine**: the image is `ubuntu:26.04` with PDAL, GDAL and PROJ from a pinned
+>   conda-forge lockfile (`env/geo-linux-64.lock`), not apt packages (neither Ubuntu 24.04 nor 26.04 packages PDAL).
+>   `gdal_calc.py` and `gdallocationinfo` are replaced by the unified `gdal raster calc` / `pixel-info` CLI.
+> - **§4 and §6.7 Accuracy**: ASPRS Edition 2 reports RMSE only, with no 95 % figure (that was Edition 1);
+>   at least 30 check points are required (not "flag if n < 20").
+> - **§4 and §7 Viewer**: served by the API from `src/argus_survey/server/static/viewer.html` at `/viewer`;
+>   `examples/viewer.html` only links to it.
+
 You are building a new package in this folder from scratch. Read this whole file before you start. It is the spec, the build order and the definition of done. Where it says *verify*, check the fact against the installed tool before you rely on it; don't trust this file over `pdal --drivers` or `projinfo`.
 
 ## 1. What this is
@@ -34,7 +46,7 @@ Relationship to the suite: it is a standalone peer. Its rasters are plain GeoTIF
 | Write posture | read-only by default; processing routes opt-in with `SURVEY_ALLOW_PROCESS=1` via `argus_cortex.server.WriteGuard` (copy the pattern from `../argus-atlas/src/argus_atlas/server/app.py`). `/health.read_only == not allow_process` |
 | Image | `ubuntu:24.04` + apt `pdal gdal-bin python3-gdal proj-data` (one consistent GDAL/PROJ that PDAL links against). Do **not** layer apt PDAL on `ghcr.io/osgeo/gdal` — two GDALs. Verify the PDAL version (Ubuntu 24.04 ships 2.6.x) has `readers.copc`, `writers.copc`, `filters.smrf`, `filters.csf`, `filters.hag_nn` |
 | CI | standalone `.github/workflows/ci.yml` that apt-installs the same packages (the shared argus-ci workflow has no system-package hook; atlas does the same — copy its ci.yml as the starting point) |
-| Branches | `dev` default (feature PRs), `main` protected (release PRs only). Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading |
+| Branches | `dev` default (feature PRs); `main` never ahead of `dev`, moved by fast-forward to a CI-passed `dev` commit (or, if protected, a release PR followed at once by a back-merge into `dev`). Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading |
 | Units | metres internally. If input is in US survey feet or international feet, convert explicitly and record it; never guess |
 
 ## 3. Core rules (put these in the repo's CLAUDE.md)

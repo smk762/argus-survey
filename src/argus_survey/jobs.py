@@ -12,6 +12,7 @@ registered with their SHA256, and :meth:`Job.step` times a step into the sidecar
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from pydantic import ValidationError
 
 from argus_survey import __version__
 from argus_survey.models import (
@@ -67,8 +69,23 @@ def load_sidecar(job_dir: Path) -> JobSidecar:
     path = job_dir / SIDECAR_NAME
     if not path.is_file():
         raise FileNotFoundError(f"no {SIDECAR_NAME} in {job_dir}")
+    text = path.read_text(encoding="utf-8")
     try:
-        return JobSidecar.model_validate_json(path.read_text(encoding="utf-8"))
+        return JobSidecar.model_validate_json(text)
+    except ValidationError as exc:
+        errors = exc.errors()
+        if errors and all(e["type"] == "extra_forbidden" for e in errors):
+            # every problem is a field this version doesn't know: the job was made by a newer argus-survey
+            try:
+                made_by = json.loads(text).get("package_version", "?")
+            except ValueError:
+                made_by = "?"
+            fields = ", ".join(".".join(str(p) for p in e["loc"]) for e in errors)
+            raise SurveyError(
+                f"{path} was written by a newer argus-survey ({made_by}; this is {__version__}): "
+                f"it has fields this version doesn't know ({fields}). Upgrade argus-survey to use this job."
+            ) from exc
+        raise SurveyError(f"invalid {path}: {exc}") from exc
     except ValueError as exc:
         raise SurveyError(f"invalid {path}: {exc}") from exc
 

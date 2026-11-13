@@ -268,7 +268,8 @@ class JobSidecar(_Model):
     surfaces: SurfacesReport | None = None
     contours: ContoursReport | None = None
     volumes: list[VolumeReport] = Field(default_factory=list)
-    change: ChangeReport | None = None
+    change: ChangeReport | None = None  # the most recent comparison
+    changes: list[ChangeReport] = Field(default_factory=list)  # latest per surface
     accuracy: AccuracyReport | None = None
     profiles: list[ProfileReport] = Field(default_factory=list)
     exports: list[ExportRecord] = Field(default_factory=list)

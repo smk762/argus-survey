@@ -19,7 +19,10 @@ from argus_survey.jobs import Job
 from argus_survey.models import SurveyError
 from argus_survey.tools import run, run_json
 
-RASTER_KINDS = ("hillshade", "dtm", "dsm", "chm", "density", "dod", "dod_lod")
+RASTER_KINDS = (
+    *("hillshade", "dtm", "dsm", "chm", "density"),
+    *("dod", "dod_lod", "dod_dtm", "dod_dtm_lod", "dod_dsm", "dod_dsm_lod"),  # change: latest, and per surface
+)
 VECTOR_KINDS = ("contours_geojson", "boundary", "gaps")
 TERRAIN = [
     (0.0, (43, 131, 186)),

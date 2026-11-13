@@ -22,6 +22,7 @@ All notable changes to this project are documented here. The format follows
 - Docs: README walkthrough on public USGS 3DEP data (`make sample`), WA datum table, runbook, data sources, argus-atlas showcase. `make demo`/`up`/`down`.
 - Ingest refuses geographic and Web Mercator working CRSs (Mercator metres are not ground metres).
 - API on :8107 (`argus-survey serve`, compose `serve`): health, doctor, inputs, jobs, products by kind with HTTP Range (COPC streams), web map views (Web Mercator PNG + corners, WGS 84 GeoJSON), and `POST /jobs/{id}/{step}` for every step streaming Server-Sent Events. Read-only unless `SURVEY_ALLOW_PROCESS`; inputs are names under `SURVEY_DATA_DIR`.
+- Docs: README API route table, step names and body models (pointing at the wire schema); how check points are split into NVA/VVA; the 0.10 m default LoD; `synth DIR --kit` syntax; which commands take `--job`/`--out`. SPEC.md marked as the historical v0 brief, with where it diverges.
 
 ## [0.1.0rc1] - 2026-10-31
 
