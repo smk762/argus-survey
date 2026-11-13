@@ -1,6 +1,6 @@
 # NOTE: .git is deliberately *not* ignored -- hatch-vcs reads the version from
-# git history at build time.
-.github
+# git history at build time. Nothing tracked may be ignored either: git would see it
+# as deleted, and hatch-vcs would version a dirty tree (0.1.0 shipped as 0.1.1.dev0+…d<date>).
 .venv
 venv
 dist
@@ -16,4 +16,5 @@ htmlcov
 # Local data and job output: mounted at run time, never baked into the image
 .env
 data
+!data/in/.gitkeep
 jobs
