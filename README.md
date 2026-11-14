@@ -1,4 +1,9 @@
-# argus-survey
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/smk762/argus-cortex/dev/brand/packages/survey/argus-survey-lockup-dark.svg">
+    <img alt="argus-survey" src="https://raw.githubusercontent.com/smk762/argus-cortex/dev/brand/packages/survey/argus-survey-lockup-light.svg" height="52">
+  </picture>
+</h1>
 
 **Point-cloud deliverables for land surveyors — with every datum, transformation and command on the record.**
 
