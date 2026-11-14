@@ -127,10 +127,33 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          # The version the image reports comes from the tag, not from git inside the build (#51).
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: astral-sh/setup-uv@v6
+      - name: The pushed image reports the tag at /health
+        # Compared as PEP 440 versions (v0.3.0a1 -> 0.3.0a1). The image has no `packaging` (a dev dependency),
+        # so the comparison runs on the runner.
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/argus-survey:${{ steps.meta.outputs.version }}
+          WANT: ${{ steps.meta.outputs.version }}
+        run: |
+          docker run -d --name survey -p 127.0.0.1:8107:8107 "$IMAGE"
+          health=""
+          for _ in $(seq 30); do
+            # Not `curl | jq`: jq exits 0 on empty input, so a refused connection would end the wait.
+            health=$(curl -fsS http://127.0.0.1:8107/health) && break
+            sleep 2
+          done
+          docker logs survey
+          got=$(jq -r '.version // empty' <<<"$health")
+          echo "image reports ${got:-nothing}, tag is $WANT"
+          GOT="$got" uv run --no-project --with packaging python -c \
+            "import os, sys; from packaging.version import Version as V; sys.exit(V(os.environ['GOT']) != V(os.environ['WANT']))"
 
   github-release:
     # The GitHub Release is the last step, so it only appears once the version is
