@@ -1,4 +1,9 @@
-# argus-survey
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/smk762/argus-cortex/dev/brand/packages/survey/argus-survey-lockup-dark.svg">
+    <img alt="argus-survey" src="https://raw.githubusercontent.com/smk762/argus-cortex/dev/brand/packages/survey/argus-survey-lockup-light.svg" height="52">
+  </picture>
+</h1>
 
 **Point-cloud deliverables for land surveyors — with every datum, transformation and command on the record.**
 
@@ -13,6 +18,7 @@ It is built to be judged on **correct datums, honest numbers and reproducible ou
 - **No silent datums.** Heights without a vertical datum are refused for height work unless you say what
   they are (`--assume-vertical`), and then the report carries a red banner. A transformation that would need a
   missing geoid grid is refused — never quietly downgraded to a "ballpark" one (around Perth that is ~30 m).
+  The rules are in [Datums](https://github.com/smk762/argus-survey/blob/main/docs/datums.md).
 - **Numbers come with their uncertainty.** Volumes state the cell size, void %, method and the base's fit;
   accuracy states n, exclusions, the standard and edition; change states its level of detection.
 - **Tested against answers known in advance**: a cone stockpile of πr²h/3 on a tilted plane, a 1 m apex
@@ -103,7 +109,7 @@ so the choice can be checked.
 | `contours --interval I [--index N]` | `contours.gpkg`, `contours.geojson` |
 | `volume --polygon P --base plane\|lowest-perimeter\|surface:T` | `volume.json` |
 | `cutfill --design D.tif` | `cutfill.json` |
-| `change --against EARLIER [--lod M \| --lod-from-accuracy]` | `change.json`, `dod.tif`, `dod_lod.tif` |
+| `change --against EARLIER [--lod M \| --lod-from-accuracy]` | `change_<surface>.json`, `dod_<surface>.tif`, `dod_<surface>_lod.tif` |
 | `accuracy --checks C.csv --crs CRS` | `accuracy.json`, `accuracy_residuals.csv` |
 | `profile --line L --step S` | `profile.csv`, `profile.svg` |
 | `export --points las\|e57 [--polygon P] [--thin S]` | `points.las` (LAS 1.4, uncompressed) or `points.e57` for ReCap / Civil 3D, plus notes (CRS, class legend) |
@@ -114,7 +120,9 @@ so the choice can be checked.
 | `serve` | API + viewer on :8107 |
 
 Run any of them with `--help`. All job commands (everything except `doctor`, `info`, `synth`, `schema` and
-`serve`) take `--job ID` (under `SURVEY_JOBS_DIR`) or `--out DIR`.
+`serve`) take `--job ID` (under `SURVEY_JOBS_DIR`) or `--out DIR`. Each step's parameters, outputs and
+refusals are in [Workflow steps](https://github.com/smk762/argus-survey/blob/main/docs/steps.md); every option is in the generated
+[CLI reference](https://github.com/smk762/argus-survey/blob/main/docs/cli.md).
 
 ## How the numbers are made
 
@@ -127,20 +135,16 @@ Run any of them with `--help`. All job commands (everything except `doctor`, `in
 - **Volumes**: per-cell (upper − lower) × cell area, positive and negative summed separately, with boundary
   cells weighted by the fraction inside the polygon (`gdal raster zonal-stats --pixels fractional`). A plane
   base is a least-squares fit to surface heights sampled along the polygon boundary, with its RMS reported.
-  More than 5 % voids in a polygon is refused unless you accept it.
+  More than 5 % voids in a polygon is refused unless you accept it. When to use each base:
+  [Volume bases](https://github.com/smk762/argus-survey/blob/main/docs/methods.md#volume-bases).
 - **Change**: later − earlier; |Δ| below the level of detection is "no detectable change". The LoD is given
   (`--lod`), or 1.96·√(σ₁² + σ₂²) from both epochs' accuracy statements (`--lod-from-accuracy`); with neither
-  it defaults to 0.10 m, and `change.json`'s `lod_rule` says `default 0.1 m`.
-- **Accuracy**: ASPRS Positional Accuracy Standards, Edition 2, Version 2 (2024), checked against the
-  standard's text: RMSE only (Edition 1's 95 % figure is gone); the class is free-valued ("#-cm", NVA RMSE_V ≤
-  #) and given with `--class-cm`; product RMSE_V = √(RMSE_V1² + RMSE_V2²) (§7.12.4), where `--checkpoint-rmse`
-  is the surveyor's 1σ vertical RMSE; NVA pass/fail, VVA reported as found; min, max, mean, median, std and
-  RMSE (§7.16); residuals beyond 3 × the target RMSE listed as blunders and a mean above 25 % of it flagged as
-  bias (§7.2). Statements use §7.16.1's wording, including its reduced-checkpoint statement below 30 points. A
-  check point is VVA only when the CSV's optional `description` column starts with `veg` or `vva`
-  (case-insensitive); every other point, including one with an empty or missing description, is NVA and is
-  pass/fail tested. Check points are given in a stated CRS and transformed through the same explicit operation
-  machinery. Residuals are surface − check.
+  it defaults to 0.10 m, and `change_<surface>.json`'s `lod_rule` says `default 0.1 m`.
+- **Accuracy**: ASPRS Positional Accuracy Standards, Edition 2, Version 2 (2024): RMSE only (no 95 % figure),
+  product RMSE_V = √(RMSE_V1² + RMSE_V2²) including the check survey's own RMSE, NVA pass/fail against a
+  free-valued "#-cm" class, VVA reported as found, at least 30 check points per group, blunders and bias
+  flagged. Residuals are surface − check. The full method:
+  [Vertical accuracy (NVA and VVA)](https://github.com/smk762/argus-survey/blob/main/docs/methods.md#vertical-accuracy-nva-and-vva).
 - **Drone-scale data**: ingest streams; the COPC is built out of core by untwine; filters that need
   neighbours (outliers, SMRF/CSF, height above ground) run on buffered tiles whose cores partition the site
   exactly — the tiles must add up to the source's point count before they are merged.
@@ -160,31 +164,10 @@ alongside the grid values.
 warning, and the result). Inputs are named relative to `SURVEY_DATA_DIR`; products are fetched by
 `(job id, kind)` with HTTP range support, so the viewer streams the COPC straight from the API.
 
-| Route | Returns |
-|---|---|
-| `GET /health` | `{status, service, version, read_only, tools}`; `read_only` is `not SURVEY_ALLOW_PROCESS` |
-| `GET /doctor` | the toolchain report (as `argus-survey doctor`) |
-| `GET /inputs` | point clouds, vectors, rasters and CSVs under `SURVEY_DATA_DIR`, by name |
-| `GET /jobs` | `{jobs: [JobDigest]}` |
-| `GET /jobs/{id}` | the sidecar (`job.json`) |
-| `GET /jobs/{id}/{kind}` | a product by kind (`copc`, `dtm`, `report`, …), with HTTP Range |
-| `GET /jobs/{id}/web/{kind}` | map view: a raster → `{url, lon/lat corners}`; a vector → WGS 84 GeoJSON |
-| `GET /jobs/{id}/web/{kind}/image` | the map view's EPSG:3857 PNG |
-| `POST /jobs/{id}/{step}` | run a step (403 unless processing is allowed; 409 while the job is busy) |
-| `GET /viewer` (`/` redirects) | the viewer |
-
-`{step}` is one of `ingest`, `qa`, `ground`, `surfaces`, `contours`, `volume`, `cutfill`, `change`, `accuracy`,
-`profile`, `report` or `run`, each with a JSON body whose fields mirror the CLI options (`IngestBody`,
-`QaBody`, … `RunBody`; `report` takes `{}`). Two differences from the CLI: `volume` and `cutfill` accept a
-drawn `polygon_geojson` (a WGS 84 Polygon/MultiPolygon geometry) instead of a `polygon` file, and `profile`
-takes a drawn `line` (a WGS 84 LineString) or a `line_file`; drawn geometry is saved in the job dir under a
-content hash so the recorded argv keeps pointing at it. `ingest` and `run` create the job; the other steps
-need it to exist. The response is an SSE stream of `start`, `step`, `command`, `warning`, then `done` (the
-step's result, product kinds, warnings) or `error`.
-
-The request bodies, `HealthInfo`, the SSE payloads and `job.json` are all in one JSON Schema,
+Routes, request bodies, SSE events and error codes are in [HTTP API](https://github.com/smk762/argus-survey/blob/main/docs/api.md). The request
+bodies, `HealthInfo`, the SSE payloads and `job.json` are all in one JSON Schema,
 [`schema/survey-wire.schema.json`](https://github.com/smk762/argus-survey/blob/main/schema/survey-wire.schema.json) (regenerate with `argus-survey schema`);
-generate client types from it rather than from this table.
+generate client types from it.
 
 The viewer (`/viewer`) shows the hillshade, surfaces, density, change, contours and coverage on a map, the
 classified cloud in 3D (coloured by elevation, class or intensity), the job's CRS and warnings, and — when
@@ -206,6 +189,20 @@ on `PATH`. pip can't install those, so set up the environment above (or the
 [`env/geo.yml`](https://github.com/smk762/argus-survey/blob/main/env/geo.yml) stack) first, then check with
 `argus-survey doctor`.
 
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [Datums](https://github.com/smk762/argus-survey/blob/main/docs/datums.md) | Rule 1: what is refused without a vertical datum, what counts as assumed, why it is shown in red, how transformations are chosen |
+| [Workflow steps](https://github.com/smk762/argus-survey/blob/main/docs/steps.md) | each step's parameters, outputs and refusals |
+| [Methods](https://github.com/smk762/argus-survey/blob/main/docs/methods.md) | the accuracy statement (NVA/VVA) and the three volume bases |
+| [Provenance](https://github.com/smk762/argus-survey/blob/main/docs/provenance.md) | what `job.json` records and how to read it |
+| [HTTP API](https://github.com/smk762/argus-survey/blob/main/docs/api.md) | routes, request bodies, SSE events, the read-only posture |
+| [CLI reference](https://github.com/smk762/argus-survey/blob/main/docs/cli.md) | every command and option, generated from the CLI (`make docs`) |
+| [Runbook](https://github.com/smk762/argus-survey/blob/main/docs/runbook.md) | layout on disk, configuration, a WA drone job, reading refusals, stockpiles, large surveys |
+| [Public data](https://github.com/smk762/argus-survey/blob/main/docs/data-sources.md) | public point clouds, and the synthetic scene and demo kit with their known answers |
+| [Atlas showcase](https://github.com/smk762/argus-survey/blob/main/docs/atlas-showcase.md) | a survey DTM as an argus-atlas map |
+
 ## Develop
 
 ```bash
@@ -215,9 +212,9 @@ make test         # pure-Python tests here; tool tests skip without PDAL
 make test-docker  # the full suite in the image, tools required (what CI runs)
 ```
 
-See [CLAUDE.md](https://github.com/smk762/argus-survey/blob/main/CLAUDE.md) for the code map and conventions, [docs/runbook.md](https://github.com/smk762/argus-survey/blob/main/docs/runbook.md) for
-operations, [docs/data-sources.md](https://github.com/smk762/argus-survey/blob/main/docs/data-sources.md) for public data and
-[docs/atlas-showcase.md](https://github.com/smk762/argus-survey/blob/main/docs/atlas-showcase.md) for turning a survey DTM into an argus-atlas map.
+See [CLAUDE.md](https://github.com/smk762/argus-survey/blob/main/CLAUDE.md) for the code map and conventions, and
+[Documentation](#documentation) for the rest. `make docs` regenerates `docs/cli.md`; a test fails when it is stale,
+and another when a heading that other repos link to (argus-sightline) disappears.
 Follow-ups are [GitHub issues](https://github.com/smk762/argus-survey/issues) — Autodesk interoperability (LandXML, DXF, ReCap) first.
 
 Part of the [Argus suite](https://github.com/smk762?tab=repositories&q=argus). MIT licence.

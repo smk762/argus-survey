@@ -2,7 +2,7 @@ UV ?= uv
 # Where `make demo-kit` writes (the compose input mount is read-only, so the kit gets its own).
 KIT_HOST ?= $(CURDIR)/data/in
 
-.PHONY: help install lock geo-lock lint format test test-docker image doctor sample demo demo-kit schema up down build clean
+.PHONY: help install lock geo-lock lint format test test-docker image doctor sample demo demo-kit schema docs up down build clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -48,6 +48,9 @@ demo-kit:  ## Every demo input with known answers (two epochs, checks, polygons,
 
 schema:  ## Regenerate schema/survey-wire.schema.json (the wire contract UIs codegen against)
 	$(UV) run --no-sync argus-survey schema
+
+docs:  ## Regenerate docs/cli.md (the CLI reference) from the Typer app
+	$(UV) run --no-sync python -m typer argus_survey.cli utils docs --name argus-survey --output docs/cli.md
 
 up:  ## Start the API + viewer on http://127.0.0.1:8107/viewer
 	docker compose up -d --build serve

@@ -13,8 +13,13 @@ build
 .coverage
 htmlcov
 
-# Local data and job output: mounted at run time, never baked into the image
-.env
-data
-!data/in/.gitkeep
-jobs
+# Local data and job output: mounted at run time, never baked into the image. Anchored with `/`
+# and written so git and Docker agree: an unanchored `data` means any depth to git (tests/data),
+# and git can't re-include a file under an excluded directory. Check with
+# `git ls-files -ci --exclude-from=.dockerignore`, which must print nothing (#51).
+/.env
+/data/*
+!/data/in
+/data/in/*
+!/data/in/.gitkeep
+/jobs

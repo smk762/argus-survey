@@ -347,7 +347,7 @@ def create_app(
                 ),
                 False,
             ),
-            "contours": (ContoursBody, lambda j, b: contours(j, interval=b.interval, index=b.index), False),
+            "contours": (ContoursBody, lambda j, b: contours(j, interval=b.interval, index=b.index or None), False),
             "volume": (VolumeBody, volume_run, False),
             "cutfill": (CutfillBody, cutfill_run, False),
             "change": (

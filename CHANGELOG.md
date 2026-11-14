@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-14
+
+Reference docs, and release fixes: the image reports its tag.
+
+### Added
+- Reference docs, so argus-sightline can import them at `dev` HEAD (#42): `docs/datums.md` (Rule 1: what is refused, what counts as assumed, why red), `docs/steps.md` (each step's parameters, outputs and refusals), `docs/methods.md` (NVA/VVA accuracy and the three volume bases), `docs/provenance.md` (`job.json`), `docs/api.md` (routes, bodies, SSE, read-only posture) and a generated `docs/cli.md` (`make docs`, checked by a test). `docs/data-sources.md` covers the `--kit` truths. A test keeps every heading other repos link to.
+- GitHub Releases, as in the rest of the suite: after PyPI publishes and the image passes its `/health` check, the release workflow creates a Release titled with the tag, whose notes are that version's CHANGELOG section, with the wheel and sdist attached (`rc`/`a`/`b`/`dev` tags are marked pre-release). A tag without a CHANGELOG section now fails in `build`, before anything publishes.
+
+### Fixed
+- The image reports the release's version (#51). The release passes the tag to the build as `VERSION`, which sets `SETUPTOOLS_SCM_PRETEND_VERSION` for building this package only (dependencies are synced before it is set), and the release fails unless the pushed image's `/health` version equals the tag as a PEP 440 version. `.dockerignore` is anchored so git reads it the way Docker does: `git ls-files -ci --exclude-from=.dockerignore` prints nothing.
+- `POST /jobs/{id}/contours` accepts `index: 0` for no index contours, as the CLI's `--index 0` does (it was refused).
+
+### Changed
+- Release image tags follow PEP 440: `:latest` and `:X.Y` move only on a final release, never on a release candidate. The install check also runs `argus-survey --version`, which would have caught 0.1.0's broken bare install.
+
 ## [0.1.1] - 2026-11-13
 
 Packaging fixes for 0.1.0.

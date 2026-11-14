@@ -18,6 +18,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Extract release notes from CHANGELOG.md
+        # Here, before anything publishes: a tag without its section fails now, not after PyPI has the version.
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v head="## [${version}]" 'index($0, head) == 1 {found = 1; next} found && /^## \[/ {exit} found' \
+            CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for ${version}"
+            exit 1
+          fi
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -26,6 +36,10 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: notes.md
 
   test-install:
     runs-on: ubuntu-latest
@@ -41,11 +55,13 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - name: Install wheel and smoke-test import
+      - name: Install wheel and smoke-test import and CLI
+        # The CLI too: 0.1.0 imported fine but its argus-survey script failed on a missing dependency.
         run: |
           uv venv --python ${{ matrix.python-version }}
           uv pip install dist/*.whl
           uv run --no-sync python -c "import argus_survey; print(f'argus-survey {argus_survey.__version__} OK')"
+          uv run --no-sync argus-survey --version
 
   publish-testpypi:
     runs-on: ubuntu-latest
@@ -99,16 +115,77 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/argus-survey
+          # Tags are PEP 440 (v0.2.0rc1), which semver rejects: pep440 gives the version tag for every release,
+          # major.minor only for finals, and latest=auto moves :latest only on a final, never on a release candidate.
+          flavor: |
+            latest=auto
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=pep440,pattern={{version}}
+            type=pep440,pattern={{major}}.{{minor}}
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
+          # The version the image reports comes from the tag, not from git inside the build (#51).
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: astral-sh/setup-uv@v6
+      - name: The pushed image reports the tag at /health
+        # Compared as PEP 440 versions (v0.3.0a1 -> 0.3.0a1). The image has no `packaging` (a dev dependency),
+        # so the comparison runs on the runner.
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/argus-survey:${{ steps.meta.outputs.version }}
+          WANT: ${{ steps.meta.outputs.version }}
+        run: |
+          docker run -d --name survey -p 127.0.0.1:8107:8107 "$IMAGE"
+          health=""
+          for _ in $(seq 30); do
+            # Not `curl | jq`: jq exits 0 on empty input, so a refused connection would end the wait.
+            health=$(curl -fsS http://127.0.0.1:8107/health) && break
+            sleep 2
+          done
+          docker logs survey
+          got=$(jq -r '.version // empty' <<<"$health")
+          echo "image reports ${got:-nothing}, tag is $WANT"
+          GOT="$got" uv run --no-project --with packaging python -c \
+            "import os, sys; from packaging.version import Version as V; sys.exit(V(os.environ['GOT']) != V(os.environ['WANT']))"
+
+  github-release:
+    # The GitHub Release is the last step, so it only appears once the version is
+    # actually on PyPI. Its notes are this version's CHANGELOG.md section, extracted (and checked) by build.
+    runs-on: ubuntu-latest
+    # After the image too, so a release whose image fails its /health check gets no Release.
+    needs: [publish-pypi, publish-image]
+    # Explicit, because a TestPyPI failure must not withhold this either: the
+    # default condition would skip it, though publish-pypi still ran.
+    if: "!cancelled() && needs.publish-pypi.result == 'success' && needs.publish-image.result == 'success'"
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}  # no checkout here, so gh needs the repo named
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          prerelease=""
+          case "$tag" in *-*|*rc*|*a[0-9]*|*b[0-9]*|*dev*) prerelease="--prerelease" ;; esac
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Re-run of the workflow: refresh notes and assets rather than failing.
+            gh release edit "$tag" --notes-file notes.md $prerelease
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --verify-tag --title "$tag" --notes-file notes.md $prerelease
+          fi

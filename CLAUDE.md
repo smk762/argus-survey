@@ -16,7 +16,7 @@ argus-cortex's SUITE.md** (a PR to argus-cortex in the same release).
 
 @../argus-core/SUITE.md
 
-Not checked out? Read https://github.com/smk762/argus-cortex/blob/main/SUITE.md
+Not checked out? Read https://github.com/smk762/argus-cortex/blob/dev/SUITE.md
 
 ## Toolchain (read before touching Docker/CI)
 
@@ -54,6 +54,8 @@ Not checked out? Read https://github.com/smk762/argus-cortex/blob/main/SUITE.md
 - `server/app.py` — FastAPI :8107. `WriteGuard` refuses every POST unless `SURVEY_ALLOW_PROCESS`; steps run in a thread and stream SSE (`start`, `step`, `command`, `warning`, `done`|`error`) via `Job.listeners`; one step per job at a time (409). `server/static/viewer.html` is the viewer (`examples/viewer.html` links to it).
 - `cli.py` — Typer CLI.
 
+`docs/` — published: [argus-sightline](../argus-sightline) imports `README.md` and `docs/*.md` at `dev` HEAD and deep-links to headings (`src/lib/surveyDocs.ts`). `tests/test_docs.py` lists those anchors; rename a heading only with a Sightline change. `docs/cli.md` is generated. No private IPs, home paths or email addresses in published docs.
+
 `tests/` — `conftest.py` marks tool-backed tests `tools`; they skip without the tools unless `SURVEY_TEST_REQUIRE_TOOLS=1`. `tests/data/` holds captured *text* tool output for pure-Python parser tests (no binary fixtures, ever).
 
 ## Commands
@@ -65,6 +67,7 @@ make test          # host pytest: pure-Python tests run, tool tests SKIP (no PDA
 make test-docker   # the full suite in the image against this checkout, tools required
 make image         # build the runtime image (doctor --strict inside)
 make geo-lock      # re-resolve env/geo-linux-64.lock after editing env/geo.yml
+make docs          # regenerate docs/cli.md from the Typer app (tests/test_docs.py fails when stale)
 ```
 
 The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docker run` the image as root against the checkout (root-owned `__pycache__`); compose runs as `${UID}:${GID}`.
@@ -96,6 +99,6 @@ The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docke
 - The `serve` container runs the package installed in the image: `docker compose up -d --build serve` after changing the viewer or server.
 - **Photogrammetry clouds** usually have `ReturnNumber = 0` and no classes: "first returns" selects nothing. Detect and record the source type; use all points for the DSM.
 - The conda lock includes an x86-64-v3 (AVX2) microarch marker; very old CPUs can't run the image.
-- **Branches:** `dev` is the default branch and takes feature PRs; branch from `origin/dev` and never push to `main` directly, which must never be ahead of `dev`. A release fast-forwards `main` to a `dev` commit that passed CI (`git push origin origin/dev:main`), then tags it. If `main` is protected, the release is a reviewed PR from `dev` into `main`; its merge commit stays on `main` alone, one commit ahead of `dev` with an identical tree. That is the one exception to the rule: leave it and don't merge `main` back into `dev`. Anything else on `main` that `dev` lacks is a mistake (`git diff origin/dev origin/main` must be empty), and once `main` carries such a commit, later releases are PRs too. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a CHANGELOG heading.
+- **Branches:** `dev` is the default branch and takes feature PRs; branch from `origin/dev` and never push to `main` directly, which must never be ahead of `dev`. A release fast-forwards `main` to a `dev` commit that passed CI (`git push origin origin/dev:main`), then tags it. If `main` is protected, the release is a reviewed PR from `dev` into `main`; its merge commit stays on `main` alone, one commit ahead of `dev` with an identical tree. That is the one exception to the rule: leave it and don't merge `main` back into `dev`. Anything else on `main` that `dev` lacks is a mistake (`git diff origin/dev origin/main` must be empty), and once `main` carries such a commit, later releases are PRs too. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a `## [X.Y.Z]` CHANGELOG heading: `release.yml` refuses a tag without one (before PyPI) and uses that section as the GitHub Release notes.
 - Versioning is git-tag-derived (`hatch-vcs`); `_version.py` is generated. `structlog`, Pydantic v2, ruff line-length 120. Scaffolded from `argus-pkg-template`; CI is standalone (`.github/workflows/ci.yml`).
 - Publishing (GitHub repo, PyPI, GHCR) is the owner's (smk762) job — never do it from here. Ask before adding a pip dependency beyond pydantic/structlog/typer/rich/fastapi/uvicorn/argus-cortex, or any network fetch in the server.
