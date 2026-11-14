@@ -15,7 +15,8 @@ data/jobs/<id>/     one directory per job (mounted at /data/jobs)
   *_voids.tif       1 void, 0 data, 255 outside coverage
   qa.json density.tif boundary.geojson gaps.geojson coverage.tif
   contours.gpkg contours.geojson
-  volume.json cutfill.json change.json dod.tif dod_lod.tif accuracy.json accuracy_residuals.csv
+  volume.json cutfill.json accuracy.json accuracy_residuals.csv
+  change_dtm.json dod_dtm.tif dod_dtm_lod.tif   per surface compared (dtm or dsm)
   profile.csv profile.svg report.html
   .web/             cached map views for the viewer (not deliverables; safe to delete)
 ```

@@ -41,7 +41,7 @@ stated (`--assume-vertical EPSG:5711`) from the delivery's metadata.
 
 Raw classified LAS in 1 km tiles over built-up Perth. It is not downloadable: order it with Landgate's
 [request form](https://www.landgate.wa.gov.au/siteassets/documents/location-data-and-services/licensing/location-information-transaction.pdf)
-(CustomerExperience@Landgate.wa.gov.au). Raw LiDAR is $154.10 per km² for orders up to 10 km² (2026 price list), under
+(questions go to Landgate Customer Experience). Raw LiDAR is $154.10 per km² for orders up to 10 km² (2026 price list), under
 the Landgate Personal Use Licence. Landgate's forum says the tiles were delivered in **GDA94**, so ingest picks a
 GDA94 → GDA2020 operation; ask for the CRS and vertical datum when ordering.
 
@@ -84,3 +84,34 @@ The points are unclassified, with RGB.
 `argus-survey synth site.laz --checks checks.csv` writes a scene whose answers are known: a 60 × 80 m tilted
 plane with 2 cm noise, a cone stockpile of 268.08 m³, a flat-roofed building, trees, injected outliers, and
 check points (`--epoch 2` grows the stockpile by 67.02 m³). It is what the test suite runs on.
+
+### Demo kit
+
+`argus-survey synth DIR --kit` (or `make demo-kit`) writes every input the guided demo needs into `DIR`, with
+the answers in `kit-truth.json`:
+
+| File | What it is | Known answer |
+|---|---|---|
+| `site-e1.laz` | the scene above, in `EPSG:7850+5711` (MGA2020 zone 50 + AHD) | cone stockpile **268.08 m³** |
+| `site-e2.laz` | the same site later: the stockpile grew 1 m at its apex | cone **335.10 m³**, a gain of **67.02 m³** |
+| `stockpile.geojson` | a ring 1.5 m outside the cone's toe | measure on the **DSM** with a `plane` base |
+| `pad.geojson`, `design.tif` | an 18 × 20 m pad (360 m²) and a flat design 0.25 m below the ground at the pad's centre, on a 0.5 m grid | net cut **90 m³** (0.25 m × 360 m²) |
+| `checks.csv` | 30 open and 10 vegetated check points on the true ground | NVA RMSE ≈ the 0.02 m point noise |
+
+How the truths are derived:
+
+- **Stockpile.** The cone's volume is πr²h/3, exact by construction. It stands on the tilted plane, so a
+  `plane` base fitted around the toe recovers the plane. Measure it on the DSM: ground filtering correctly
+  removes a pile from the DTM, which then reads about 10 % low.
+- **Change.** Epoch 2 raises the apex by 1 m. The 67.02 m³ gain is the difference of the two cone volumes,
+  before any level of detection. A LoD trims the cone's shallow flanks, so `change` reports a little less.
+- **Pad.** The design level is the true ground height at the pad's centre minus 0.25 m. Ground is a plane, so
+  the tilt averages out over the rectangle and cut − fill is exactly 0.25 m × the pad's area.
+  Build the surfaces at `--res 0.5` to match `design.tif`'s grid, or `cutfill` refuses it unless `--resample`
+  is given.
+- **Check points.** They lie on the analytic ground, so the open points' RMSE is the 0.02 m noise added to the
+  cloud. The vegetated ones read the DTM under the trees, reported as found (VVA).
+
+`kit-truth.json` holds `srs`, `stockpile_volume_m3`, `stockpile_volume_epoch2_m3`, `change_gain_m3`,
+`pad_area_m2`, `pad_design_level_m`, `design_res_m`, `pad_net_cut_m3` and these notes. `--kit` can't be combined
+with `--epoch`, `--photogrammetry` or `--checks`.
