@@ -54,6 +54,8 @@ Not checked out? Read https://github.com/smk762/argus-cortex/blob/main/SUITE.md
 - `server/app.py` — FastAPI :8107. `WriteGuard` refuses every POST unless `SURVEY_ALLOW_PROCESS`; steps run in a thread and stream SSE (`start`, `step`, `command`, `warning`, `done`|`error`) via `Job.listeners`; one step per job at a time (409). `server/static/viewer.html` is the viewer (`examples/viewer.html` links to it).
 - `cli.py` — Typer CLI.
 
+`docs/` — published: [argus-sightline](../argus-sightline) imports `README.md` and `docs/*.md` at `dev` HEAD and deep-links to headings (`src/lib/surveyDocs.ts`). `tests/test_docs.py` lists those anchors; rename a heading only with a Sightline change. `docs/cli.md` is generated. No private IPs, home paths or email addresses in published docs.
+
 `tests/` — `conftest.py` marks tool-backed tests `tools`; they skip without the tools unless `SURVEY_TEST_REQUIRE_TOOLS=1`. `tests/data/` holds captured *text* tool output for pure-Python parser tests (no binary fixtures, ever).
 
 ## Commands
@@ -65,6 +67,7 @@ make test          # host pytest: pure-Python tests run, tool tests SKIP (no PDA
 make test-docker   # the full suite in the image against this checkout, tools required
 make image         # build the runtime image (doctor --strict inside)
 make geo-lock      # re-resolve env/geo-linux-64.lock after editing env/geo.yml
+make docs          # regenerate docs/cli.md from the Typer app (tests/test_docs.py fails when stale)
 ```
 
 The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docker run` the image as root against the checkout (root-owned `__pycache__`); compose runs as `${UID}:${GID}`.

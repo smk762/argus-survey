@@ -15,7 +15,7 @@ gdalinfo -json data/jobs/site1/dtm.tif | python3 -c \
 argus-atlas controls --dem data/jobs/site1/dtm.tif --bbox <w,s,e,n> --out jobs/site1-map
 ```
 
-Then follow atlas's bake runbook (`../argus-atlas/docs/first-bake.md`) for the bake and tiles.
+Then follow atlas's [first-bake runbook](https://github.com/smk762/argus-atlas/blob/dev/docs/first-bake.md) for the bake and tiles.
 
 ## What carries over, and what doesn't
 
