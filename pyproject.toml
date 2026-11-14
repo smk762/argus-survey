@@ -44,6 +44,9 @@ argus-survey = "argus_survey.cli:app"
 
 [project.urls]
 Repository = "https://github.com/smk762/argus-survey"
+Documentation = "https://github.com/smk762/argus-survey/tree/main/docs"
+Changelog = "https://github.com/smk762/argus-survey/blob/main/CHANGELOG.md"
+Issues = "https://github.com/smk762/argus-survey/issues"
 
 [tool.hatch.version]
 source = "vcs"
