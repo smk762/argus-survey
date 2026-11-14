@@ -34,7 +34,7 @@ Clients never send filesystem paths:
 | `GET /jobs` | `{jobs: [JobDigest]}` |
 | `GET /jobs/{id}` | the sidecar (`job.json`); see [Provenance](provenance.md) |
 | `GET /jobs/{id}/{kind}` | a product by kind (`copc`, `dtm`, `report`, …), with HTTP Range (`206`), so COPC readers stream it. `404` if the job has no such product, `410` if it is recorded but missing on disk |
-| `GET /jobs/{id}/web/{kind}` | a map view: a raster gives `RasterView` (`{url, coordinates, range, ramp}`, lon/lat corners), a vector gives WGS 84 GeoJSON |
+| `GET /jobs/{id}/web/{kind}` | a map view: a raster gives `RasterView` (`{kind, png, url, coordinates, range, ramp}`, lon/lat corners), a vector gives WGS 84 GeoJSON |
 | `GET /jobs/{id}/web/{kind}/image` | the raster map view's EPSG:3857 PNG |
 | `POST /jobs/{id}/{step}` | run a step, streamed as Server-Sent Events |
 | `GET /viewer` (`/` redirects) | the viewer |
@@ -50,7 +50,7 @@ Clients never send filesystem paths:
 | `qa` | `QaBody` | `density_res`, `min_density` |
 | `ground` | `GroundBody` | `method`, `preset`, `params`, `keep_classes` |
 | `surfaces` | `SurfacesBody` | `res`, `dtm`, `dsm`, `chm`, `fill_voids`, `dsm_method`, `chm_method` |
-| `contours` | `ContoursBody` | `interval`, `index` |
+| `contours` | `ContoursBody` | `interval`, `index` (`0` or `null`: no index contours) |
 | `volume` | `VolumeBody` | `polygon` (a file name) **or** `polygon_geojson` (a WGS 84 Polygon/MultiPolygon geometry drawn on the map) with an optional `name`; `base`, `surface`, `polygon_srs`, `allow_voids`, `resample`, `base_vertical` |
 | `cutfill` | `CutfillBody` | `design`, plus a polygon as for `volume`; `surface`, `design_vertical`, `resample`, `allow_voids` |
 | `change` | `ChangeBody` | `against` (a job id), `lod` or `lod_from_accuracy`, `surface`, `polygon`, `polygon_srs` |

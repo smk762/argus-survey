@@ -50,10 +50,10 @@ def _anchor(heading: str) -> str:
 def _anchors(path: Path) -> set[str]:
     out, fenced = set(), False
     for line in path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("```"):
+        if line.startswith(("```", "~~~")):
             fenced = not fenced
-        elif not fenced and line.startswith("#"):
-            out.add(_anchor(line.lstrip("#")))
+        elif not fenced and (m := re.match(r"#{1,6}\s+(.*)", line)):
+            out.add(_anchor(m.group(1)))
     return out
 
 

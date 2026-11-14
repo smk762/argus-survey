@@ -139,7 +139,7 @@ refusals are in [Workflow steps](https://github.com/smk762/argus-survey/blob/mai
   [Volume bases](https://github.com/smk762/argus-survey/blob/main/docs/methods.md#volume-bases).
 - **Change**: later − earlier; |Δ| below the level of detection is "no detectable change". The LoD is given
   (`--lod`), or 1.96·√(σ₁² + σ₂²) from both epochs' accuracy statements (`--lod-from-accuracy`); with neither
-  it defaults to 0.10 m, and `change.json`'s `lod_rule` says `default 0.1 m`.
+  it defaults to 0.10 m, and `change_<surface>.json`'s `lod_rule` says `default 0.1 m`.
 - **Accuracy**: ASPRS Positional Accuracy Standards, Edition 2, Version 2 (2024): RMSE only (no 95 % figure),
   product RMSE_V = √(RMSE_V1² + RMSE_V2²) including the check survey's own RMSE, NVA pass/fail against a
   free-valued "#-cm" class, VVA reported as found, at least 30 check points per group, blunders and bias
