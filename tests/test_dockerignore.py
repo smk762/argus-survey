@@ -68,3 +68,12 @@ def test_build_context_keeps_every_tracked_file() -> None:
     rules = _rules()
     dropped = [p for p in tracked.splitlines() if _excluded(p, rules)]
     assert not dropped, f".dockerignore drops tracked files, so the image's version would be dirty: {dropped}"
+
+
+@pytest.mark.skipif(shutil.which("git") is None or not (ROOT / ".git").exists(), reason="needs a git checkout")
+def test_git_reads_dockerignore_the_same_way() -> None:
+    """The check from #51, which reads the file with git's rules: an unanchored `data` means any depth there."""
+    out = subprocess.run(
+        ["git", "ls-files", "-ci", "--exclude-from=.dockerignore"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout
+    assert not out.strip(), f"git reads .dockerignore as dropping tracked files: {out.split()}"

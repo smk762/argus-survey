@@ -74,10 +74,21 @@ COPY . .
 
 # Extras baked into the image, synced from uv.lock (--locked fails the build if
 # the lock is stale). The package lives in its own venv on Ubuntu's Python.
+#
+# The release passes the tag (PEP 440, no `v`) as VERSION, so the image reports
+# it whatever git inside the build thinks of the tree (#51); a local build leaves
+# it empty and hatch-vcs decides. SETUPTOOLS_SCM_PRETEND_VERSION must reach only
+# this package's build: hatch-vcs ignores the per-package
+# SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ARGUS_SURVEY, and the generic one would also
+# version any dependency built from source. So the dependencies are synced first
+# without it, and the second sync, with it, has only the project left to build.
 ARG EXTRAS="server,cli"
+ARG VERSION=""
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
-RUN uv sync --locked --no-editable --no-cache --python /usr/bin/python3 \
-        $(echo "${EXTRAS}" | tr ',' '\n' | sed 's/^/--extra /') \
+RUN extras="$(echo "${EXTRAS}" | tr ',' '\n' | sed 's/^/--extra /')" \
+    && uv sync --locked --no-install-project --no-cache --python /usr/bin/python3 $extras \
+    && if [ -n "${VERSION}" ]; then export SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}"; fi \
+    && uv sync --locked --no-editable --no-cache --python /usr/bin/python3 $extras \
     && argus-survey doctor --strict
 
 ENV SURVEY_DATA_DIR=/data/in \

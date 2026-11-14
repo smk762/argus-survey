@@ -9,6 +9,9 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - GitHub Releases, as in the rest of the suite: after PyPI publishes, the release workflow creates a Release titled with the tag, whose notes are that version's CHANGELOG section, with the wheel and sdist attached (`rc`/`a`/`b`/`dev` tags are marked pre-release). A tag without a CHANGELOG section now fails in `build`, before anything publishes.
 
+### Fixed
+- The image reports the release's version (#51). The release passes the tag to the build as `VERSION`, which sets `SETUPTOOLS_SCM_PRETEND_VERSION` for building this package only (dependencies are synced before it is set), and the release fails unless the pushed image's `/health` version equals the tag as a PEP 440 version. `.dockerignore` is anchored so git reads it the way Docker does: `git ls-files -ci --exclude-from=.dockerignore` prints nothing.
+
 ### Changed
 - Release image tags follow PEP 440: `:latest` and `:X.Y` move only on a final release, never on a release candidate. The install check also runs `argus-survey --version`, which would have caught 0.1.0's broken bare install.
 
