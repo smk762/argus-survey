@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Job ids are checked by argus-cortex's `fs.safe_name`** (argus-cortex 0.8, ai-code-auditor#56): the same rule as before (start alphanumeric, then letters, digits, `.`, `_` or `-`), now matched against the whole string and capped at 128 characters. argus-cortex (pydantic-only without extras) is now a base dependency, pinned `>=0.8,<0.9`, as is the `server` extra's.
+
 ## [0.1.2] - 2026-11-14
 
 Reference docs, and release fixes: the image reports its tag.

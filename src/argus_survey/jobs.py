@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -23,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from argus_cortex.fs import PathRefused, safe_name
 from pydantic import ValidationError
 
 from argus_survey import __version__
@@ -42,11 +42,15 @@ from argus_survey.tools import sha256_file, versions
 
 log = structlog.get_logger(__name__)
 
-_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
 
 def is_safe_id(value: str) -> bool:
-    return bool(value) and value not in {".", ".."} and _SAFE_ID.match(value) is not None
+    """One path segment: starts alphanumeric, then letters, digits, ``.``, ``_`` or ``-`` (argus-cortex's
+    :func:`~argus_cortex.fs.safe_name`, which matches the whole string, so a trailing newline is refused)."""
+    try:
+        safe_name(value)
+    except PathRefused:
+        return False
+    return True
 
 
 def require_safe_id(value: str, label: str = "job id") -> str:
