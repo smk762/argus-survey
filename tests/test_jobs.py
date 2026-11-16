@@ -14,7 +14,7 @@ def test_safe_ids(good: str) -> None:
     assert is_safe_id(good)
 
 
-@pytest.mark.parametrize("bad", ["", ".", "..", "../x", "a/b", "-x", ".hidden", "a b", "a\x00"])
+@pytest.mark.parametrize("bad", ["", ".", "..", "../x", "a/b", "-x", ".hidden", "a b", "a\x00", "site1\n", "x" * 129])
 def test_unsafe_ids(bad: str) -> None:
     assert not is_safe_id(bad)
 

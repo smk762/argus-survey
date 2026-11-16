@@ -25,6 +25,9 @@ classifiers = [
 keywords = ["lidar", "point-cloud", "surveying", "pdal", "gdal", "dtm", "volumes", "copc"]
 # PDAL, GDAL and PROJ are system tools called as subprocesses (env/geo.yml), never pip packages.
 dependencies = [
+    # argus_cortex.fs (safe_name) for job ids; the base install is pydantic-only.
+    # Capped below the next minor: argus-cortex is pre-1.0, where a minor bump may break.
+    "argus-cortex>=0.8,<0.9",
     "pydantic>=2.7",
     "structlog>=24.0",
     "typer>=0.12",
@@ -32,7 +35,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-server = ["fastapi>=0.110", "uvicorn>=0.27", "argus-cortex[server]>=0.2.0"]
+server = ["fastapi>=0.110", "uvicorn>=0.27", "argus-cortex[server]>=0.8,<0.9"]
 # The CLI is part of the base install; `cli` stays as an empty alias for `argus-survey[cli]`.
 cli = []
 # httpx2 backs starlette's TestClient: starlette >=1.3 deprecated the httpx path
