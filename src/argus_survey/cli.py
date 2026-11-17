@@ -18,10 +18,11 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
+from rich.text import Text
 
 from argus_survey import __version__, config
 from argus_survey.jobs import Job, open_job
-from argus_survey.models import CrsRecord, SurveyError, VolumeReport
+from argus_survey.models import MIN_INTERVAL_M, MIN_RES_M, CrsRecord, SurveyError, VolumeReport
 from argus_survey.tools import ToolError
 
 app = typer.Typer(
@@ -88,14 +89,14 @@ def doctor(
         print(report.model_dump_json(indent=2))
     else:
         v = report.versions
-        console.print(f"argus-survey {__version__} · PDAL {v.pdal} · GDAL {v.gdal} · PROJ {v.proj}")
+        console.print(f"argus-survey {__version__} · PDAL {v.pdal} · GDAL {v.gdal} · PROJ {v.proj}", markup=False)
         table = Table(show_header=True, header_style="bold")
         table.add_column("check")
         table.add_column("")
         table.add_column("detail", overflow="fold")
         for c in report.checks:
             mark = "[green]ok[/]" if c.ok else ("[red]FAIL[/]" if c.required else "[yellow]warn[/]")
-            table.add_row(c.name, mark, c.detail)
+            table.add_row(Text(c.name), mark, Text(c.detail))  # tool output: literal text, never markup
         console.print(table)
         console.print("[green]toolchain ok[/]" if report.ok else "[red]toolchain incomplete[/]")
     if strict and not report.ok:
@@ -118,22 +119,23 @@ def _print_crs(record: CrsRecord | None, title: str = "CRS") -> None:
     table = Table(title=title, show_header=False, title_justify="left")
     table.add_column(style="bold")
     table.add_column(overflow="fold")
-    table.add_row("name", record.name)
-    table.add_row("definition", record.definition if len(record.definition) < 120 else "(WKT/PROJJSON)")
+    # values come from the data (WKT names, file metadata): Text, so Rich never parses brackets as markup
+    table.add_row("name", Text(record.name))
+    table.add_row("definition", Text(record.definition if len(record.definition) < 120 else "(WKT/PROJJSON)"))
     h = record.horizontal
-    table.add_row("horizontal", f"{h.name}" + (f" (EPSG:{h.epsg})" if h.epsg else "") + f", {h.units}")
+    table.add_row("horizontal", Text(f"{h.name}" + (f" (EPSG:{h.epsg})" if h.epsg else "") + f", {h.units}"))
     if record.vertical is None:
         table.add_row("vertical", "[red]none — height steps will refuse without --assume-vertical[/]")
     else:
         v = record.vertical
         table.add_row(
             "vertical",
-            f"{v.name}" + (f" (EPSG:{v.epsg})" if v.epsg else "") + f", {v.units} [{record.height_reference}]",
+            Text(f"{v.name}" + (f" (EPSG:{v.epsg})" if v.epsg else "") + f", {v.units} [{record.height_reference}]"),
         )
     if record.geoid:
-        table.add_row("geoid", record.geoid)
+        table.add_row("geoid", Text(record.geoid))
     if record.vertical_assumed:
-        table.add_row("[red]ASSUMED[/]", f"[red]{record.vertical_assumed}[/]")
+        table.add_row("[red]ASSUMED[/]", Text(record.vertical_assumed, style="red"))
     if record.epoch is not None:
         table.add_row("epoch", str(record.epoch))
     console.print(table)
@@ -160,7 +162,7 @@ def info(
     kind = f"LAS {s['las_version']} format {s['point_format']}" if s["las_version"] else None
     if s["copc"]:
         kind = f"{kind} · COPC" if kind else "COPC"
-    console.print(f"[bold]{path.name}[/] · {s['count']:,} points" + (f" · {kind}" if kind else ""))
+    console.print(f"[bold]{escape(path.name)}[/] · {s['count']:,} points" + (f" · {kind}" if kind else ""))
     console.print(
         f"bounds  x {b['minx']:.3f} … {b['maxx']:.3f}   y {b['miny']:.3f} … {b['maxy']:.3f}   "
         f"z {b['minz']:.3f} … {b['maxz']:.3f}"
@@ -215,7 +217,8 @@ def ingest(
     if record.transform:
         t = record.transform
         console.print(
-            f"transformation: {t.name} ({t.accuracy_m} m)" + (f" · grids {', '.join(t.grids)}" if t.grids else "")
+            f"transformation: {t.name} ({t.accuracy_m} m)" + (f" · grids {', '.join(t.grids)}" if t.grids else ""),
+            markup=False,
         )
     console.print(f"source type: {record.source_type}")
     sf = record.scale_factors
@@ -290,7 +293,9 @@ def _warnings(j: Job, before: int) -> None:
 def qa(
     job: JobOpt = None,
     out: OutOpt = None,
-    density_res: Annotated[float, typer.Option("--density-res", help="Density grid cell size (m)")] = 1.0,
+    density_res: Annotated[
+        float, typer.Option("--density-res", min=MIN_RES_M, help="Density grid cell size (m)")
+    ] = 1.0,
     min_density: Annotated[
         float | None, typer.Option("--min-density", help="Gap threshold in pts/m² (default: 25% of the median)")
     ] = None,
@@ -359,7 +364,7 @@ def ground(
 def surfaces(
     job: JobOpt = None,
     out: OutOpt = None,
-    res: Annotated[float, typer.Option("--res", help="Cell size (m)")] = 0.5,
+    res: Annotated[float, typer.Option("--res", min=MIN_RES_M, help="Cell size (m)")] = 0.5,
     dtm: Annotated[bool, typer.Option("--dtm/--no-dtm")] = True,
     dsm: Annotated[bool, typer.Option("--dsm/--no-dsm")] = True,
     chm: Annotated[bool, typer.Option("--chm/--no-chm")] = True,
@@ -408,7 +413,7 @@ def surfaces(
 def contours(
     job: JobOpt = None,
     out: OutOpt = None,
-    interval: Annotated[float, typer.Option("--interval", help="Contour interval (m)")] = 0.5,
+    interval: Annotated[float, typer.Option("--interval", min=MIN_INTERVAL_M, help="Contour interval (m)")] = 0.5,
     index: Annotated[int, typer.Option("--index", help="Every N-th contour is an index contour (0: none)")] = 5,
 ) -> None:
     """Contours from the DTM (contours.gpkg + contours.geojson, index contours flagged)."""
@@ -429,8 +434,8 @@ def run(
     inputs: Annotated[list[Path], typer.Argument(help="LAS/LAZ/COPC/E57 files or directories")],
     job: JobOpt = None,
     out: OutOpt = None,
-    res: Annotated[float, typer.Option("--res", help="Surface cell size (m)")] = 0.5,
-    interval: Annotated[float, typer.Option("--interval", help="Contour interval (m)")] = 0.5,
+    res: Annotated[float, typer.Option("--res", min=MIN_RES_M, help="Surface cell size (m)")] = 0.5,
+    interval: Annotated[float, typer.Option("--interval", min=MIN_INTERVAL_M, help="Contour interval (m)")] = 0.5,
     t_srs: Annotated[str | None, typer.Option("--t-srs", help="Target CRS, e.g. EPSG:7850+5711")] = None,
     s_srs: Annotated[str | None, typer.Option("--s-srs", help="Source CRS when the files have none")] = None,
     assume_vertical: Annotated[
@@ -479,7 +484,7 @@ def _print_volumes(r: VolumeReport) -> None:
         table.add_column(col, justify="right" if col != "zone" else "left")
     for z in r.zones:
         table.add_row(
-            z.name,
+            Text(z.name),
             f"{z.area_m2:,.2f}",
             f"{z.above_m3:,.2f}",
             f"{z.below_m3:,.2f}",
@@ -489,16 +494,18 @@ def _print_volumes(r: VolumeReport) -> None:
     console.print(table)
     if r.combined_scale_factor is not None:
         console.print(
-            f"[dim]at ground (grid ÷ {r.combined_scale_factor:.8f}²): "
-            + "; ".join(f"{z.name} area {z.ground_area_m2:,.2f} m², net {z.ground_net_m3:,.2f} m³" for z in r.zones)
-            + "[/]"
+            f"at ground (grid ÷ {r.combined_scale_factor:.8f}²): "
+            + "; ".join(f"{z.name} area {z.ground_area_m2:,.2f} m², net {z.ground_net_m3:,.2f} m³" for z in r.zones),
+            style="dim",
+            markup=False,
         )
-    console.print(f"[dim]{r.sign_convention}[/]")
+    # zone names come from the user's polygons: print them literally, never as Rich markup
+    console.print(r.sign_convention, style="dim", markup=False)
     for z in r.zones:
         console.print(
-            f"[dim]{z.name}: base {z.base}"
-            + (f" (fit RMS {z.base_fit_rms_m} m)" if z.base_fit_rms_m is not None else "")
-            + "[/]"
+            f"{z.name}: base {z.base}" + (f" (fit RMS {z.base_fit_rms_m} m)" if z.base_fit_rms_m is not None else ""),
+            style="dim",
+            markup=False,
         )
 
 
@@ -668,7 +675,7 @@ def accuracy(
     for g in r.groups:
         fmt = lambda v: "—" if v is None else f"{v:.3f}"  # noqa: E731
         table.add_row(
-            g.group,
+            Text(g.group),
             str(g.n),
             str(g.excluded),
             fmt(g.mean_m),
@@ -678,7 +685,7 @@ def accuracy(
             "yes" if g.meets_minimum_count else "[red]no[/]",
         )
     console.print(table)
-    console.print(r.statement)
+    console.print(r.statement, markup=False)
     _warnings(j, n)
 
 

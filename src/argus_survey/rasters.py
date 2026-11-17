@@ -31,22 +31,35 @@ def grid_of(path: Path, *, sink: CommandSink | None = None, step: str = "raster"
     meta = info(path, sink=sink, step=step)
     gt = meta["geoTransform"]
     width, height = meta["size"]
-    if abs(gt[2]) > 0 or abs(gt[4]) > 0 or abs(gt[1] + gt[5]) > 1e-9:
+    # north-up: no rotation terms, positive pixel width, negative pixel height of the same size
+    # (gt[1] = -r, gt[5] = +r is a 180° flip whose sum is also 0)
+    if gt[2] or gt[4] or gt[1] <= 0 or gt[5] >= 0 or not math.isclose(gt[1], -gt[5], rel_tol=1e-9):
         raise SurveyError(f"{path.name} is rotated or has non-square cells; argus-survey needs a north-up square grid")
     return GridSpec(origin_x=gt[0], origin_y=gt[3] + gt[5] * height, res=gt[1], width=width, height=height)
 
 
 def stats(path: Path, *, sink: CommandSink | None = None, step: str = "raster") -> RasterStats:
-    """Exact statistics of band 1 (valid cells counted from GDAL's valid percentage)."""
+    """Exact minimum/maximum/mean/stddev of band 1's valid cells, computed fresh by GDAL.
+
+    ``valid_cells`` is *not* exact: GDAL reports only ``STATISTICS_VALID_PERCENT``, to 4 significant
+    figures, so on a large raster it can be off by ~0.005 % of the cells. Count voids from a mask's
+    mean (as ``surfaces`` does), never from ``valid_cells``.
+    """
     meta = info(path, stats=True, sink=sink, step=step)
     width, height = meta["size"]
     band = meta["bands"][0]
     md = (band.get("metadata") or {}).get("", {})
     total = width * height
-    valid_pct = float(md.get("STATISTICS_VALID_PERCENT", 0.0))
-    valid = round(total * valid_pct / 100.0)
-    if valid == 0:
-        return RasterStats(valid_cells=0, total_cells=total)
+    if "STATISTICS_MINIMUM" not in md:
+        # GDAL writes only STATISTICS_VALID_PERCENT=0 when no cell is valid
+        if float(md.get("STATISTICS_VALID_PERCENT", "nan")) == 0.0:
+            return RasterStats(valid_cells=0, total_cells=total)
+        raise SurveyError(f"GDAL computed no statistics for {path.name}")
+    if "STATISTICS_VALID_PERCENT" not in md:
+        raise SurveyError(f"GDAL reported no valid-cell percentage for {path.name} (GDAL >= 3.2 is required)")
+    valid_pct = float(md["STATISTICS_VALID_PERCENT"])
+    # there are statistics, so at least one cell is valid, however small the rounded percentage
+    valid = min(total, max(1, round(total * valid_pct / 100.0)))
     return RasterStats(
         valid_cells=valid,
         total_cells=total,
@@ -57,14 +70,51 @@ def stats(path: Path, *, sink: CommandSink | None = None, step: str = "raster") 
     )
 
 
+def nodata_value(value: Any) -> float | None:
+    """A band's ``noDataValue`` from ``gdalinfo -json`` as a float.
+
+    JSON has no NaN/Infinity, so GDAL writes those as the strings ``"NaN"``, ``"Infinity"`` and
+    ``"-Infinity"``; ``float()`` reads all three. ``None`` when the band has no nodata.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_nodata(value: float, nodata: float | None) -> bool:
+    """True when *value* is NaN or matches *nodata*.
+
+    NaN never equals itself, so NaN nodata is matched with ``isnan``; finite nodata with a relative
+    tolerance, so a Float32 cell holding a nodata given in decimal (``-3.4028235e+38``) still matches.
+    """
+    if math.isnan(value):
+        return True
+    if nodata is None or math.isnan(nodata):
+        return False
+    return math.isclose(value, nodata, rel_tol=1e-6, abs_tol=1e-6)
+
+
+def _envi_byte_order(hdr: Path) -> str:
+    """``"little"`` or ``"big"`` from an ENVI header's ``byte order`` (0 = little-endian, 1 = big-endian)."""
+    for line in hdr.read_text(encoding="utf-8", errors="replace").splitlines():
+        key, sep, val = line.partition("=")
+        if sep and key.strip().lower() == "byte order":
+            return "big" if val.strip() == "1" else "little"
+    return "little"  # the ENVI default
+
+
 def read_values(path: Path, *, sink: CommandSink | None = None, step: str = "raster") -> tuple[array, float | None]:
     """Every cell of band 1 as float32 (row-major from the top-left) and the nodata value.
 
-    Through ``gdal_translate -of ENVI`` (raw little-endian floats) rather than Python bindings.
-    Meant for modest rasters (density grids, sample windows), not full-resolution DTMs.
+    Through ``gdal_translate -of ENVI`` (raw floats, in the byte order its header states) rather
+    than Python bindings. Meant for modest rasters (density grids, sample windows), not
+    full-resolution DTMs. Compare cells with :func:`is_nodata` (the nodata value may be NaN).
     """
     meta = info(path, sink=sink, step=step)
-    nodata = meta["bands"][0].get("noDataValue")
+    nodata = nodata_value(meta["bands"][0].get("noDataValue"))
     with tempfile.TemporaryDirectory(prefix="argus-survey-raw-") as tmp:
         raw = Path(tmp) / "band.bin"
         run(
@@ -87,9 +137,10 @@ def read_values(path: Path, *, sink: CommandSink | None = None, step: str = "ras
         )
         values = array("f")
         values.frombytes(raw.read_bytes())
-    if sys.byteorder != "little":  # pragma: no cover - ENVI from GDAL is native-endian on x86/ARM
-        values.byteswap()
-    return values, (float(nodata) if nodata is not None and not isinstance(nodata, str) else None)
+        # GDAL writes ENVI in the host's byte order and says so in the header; swap only on a mismatch
+        if _envi_byte_order(raw.with_suffix(".hdr")) != sys.byteorder:
+            values.byteswap()
+    return values, nodata
 
 
 def percentile(sorted_values: list[float], q: float) -> float:
@@ -149,7 +200,7 @@ def sample(
     """
     import json
 
-    nodata = info(path, sink=sink, step=step)["bands"][0].get("noDataValue")
+    nodata = nodata_value(info(path, sink=sink, step=step)["bands"][0].get("noDataValue"))
     features = [
         {"type": "Feature", "properties": {"id": pid}, "geometry": {"type": "Point", "coordinates": [x, y]}}
         for pid, x, y in points
@@ -187,10 +238,8 @@ def sample(
         bands = props.get("bands") or []
         if not bands:
             continue
-        v = bands[0].get("raw_value")
-        if v is None or (isinstance(v, float) and math.isnan(v)):
-            continue
-        if nodata is not None and not isinstance(nodata, str) and abs(float(v) - float(nodata)) < 1e-6:
+        v = nodata_value(bands[0].get("raw_value"))
+        if v is None or is_nodata(v, nodata):
             continue
         values[str(props.get("id"))] = float(v)
     return values

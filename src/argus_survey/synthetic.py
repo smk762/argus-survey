@@ -22,6 +22,7 @@ import csv
 import json
 import math
 import random
+import struct
 import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -154,10 +155,11 @@ def points(scene: Scene) -> list[list[float | int]]:
             cone = scene.cone_z(x, y)
             if canopy is not None:
                 _, crown = canopy
-                add(x, y, scene.ground_z(x, y) + crown, 120, 1, 2, TRUTH_VEGETATION, (40, 110, 40))
+                under = scene.surface_z(x, y)  # a crown over the stockpile stands on the pile
+                add(x, y, under + crown, 120, 1, 2, TRUTH_VEGETATION, (40, 110, 40))
                 if scene.photogrammetry:
                     continue  # the camera never sees the ground under a crown
-                add(x, y, scene.surface_z(x, y), 280, 2, 2, TRUTH_GROUND, (0, 0, 0))
+                add(x, y, under, 280, 2, 2, TRUTH_GROUND if cone is None else TRUTH_STOCKPILE, (0, 0, 0))
             elif cone is not None:
                 add(x, y, cone, 340, 1, 1, TRUTH_STOCKPILE, (170, 150, 110))
             else:
@@ -180,7 +182,7 @@ def points(scene: Scene) -> list[list[float | int]]:
 
 
 def _steps(a: float, b: float, step: float) -> list[float]:
-    n = max(int((b - a) / step), 1)
+    n = max(math.floor((b - a) / step + 1e-9), 1)  # 0.3 / 0.1 is 2.999…: don't drop an interval
     return [a + k * (b - a) / n for k in range(n + 1)]
 
 
@@ -261,7 +263,7 @@ def check_points(
                 "open",
             )
         )
-    for k in range(n_vegetated):
+    for k in range(n_vegetated if scene.trees else 0):
         t = scene.trees[k % len(scene.trees)]
         ang = rnd.uniform(0, 2 * math.pi)
         r = rnd.uniform(0, t.crown_radius * 0.6)
@@ -328,7 +330,7 @@ def write_kit(out: Path, *, srs: str = "EPSG:7850+5711", sink: CommandSink | Non
 
     ``site-e1.laz`` / ``site-e2.laz`` (the stockpile grew 1 m at its apex), ``checks.csv`` (30 open + 10 vegetated),
     ``stockpile.geojson`` (a ring 1.5 m outside the cone's toe), ``pad.geojson`` + ``design.tif`` (a flat pad
-    benched 0.25 m below the ground at its centre, so cut − fill is exactly 0.25 m × the pad's area).
+    benched ≈ 0.25 m below the ground at its centre, so cut − fill is that depth × the pad's area).
     """
     from argus_survey.tools import run
 
@@ -366,6 +368,10 @@ def write_kit(out: Path, *, srs: str = "EPSG:7850+5711", sink: CommandSink | Non
     run(["gdal", "raster", "edit", "--crs", srs, str(tif)], step="synth", sink=sink)
 
     pad_area = (x1 - x0) * (y1 - y0)
+    # the truth is the level actually stored (rounded to mm, then Float32), not the nominal 0.25 m: on a plane,
+    # net cut over a pad centred on (cx, cy) is (ground there − level) × area
+    level_stored = struct.unpack("<f", struct.pack("<f", level))[0]
+    depth = scene.ground_z((x0 + x1) / 2, (y0 + y1) / 2) - level_stored
     truth: dict[str, object] = {
         "srs": srs,
         "stockpile_volume_m3": round(scene.cone_volume, 3),
@@ -374,12 +380,13 @@ def write_kit(out: Path, *, srs: str = "EPSG:7850+5711", sink: CommandSink | Non
         "pad_area_m2": pad_area,
         "pad_design_level_m": level,
         "design_res_m": res,
-        "pad_net_cut_m3": round(0.25 * pad_area, 3),
+        "pad_net_cut_m3": round(depth * pad_area, 3),
         "notes": [
             "stockpile: a cone on a tilted plane; measure it on the DSM (ground filtering removes a pile from the DTM) "
             "with a plane base",
             "change: on the DSM, the gain before any level of detection; LoD trims the cone's shallow flanks",
-            "pad: cut minus fill (design below ground) is exactly 0.25 m times the pad area",
+            "pad: cut minus fill (design below ground) is the ground's height at the pad centre minus the design "
+            "level (≈ 0.25 m) times the pad area",
             f"design.tif is on a {res} m grid: build the surfaces at --res {res}, or cut/fill refuses the misaligned "
             "design unless --resample is given",
             "checks: on the true ground; NVA RMSE ≈ the 0.02 m point noise, VVA reads the DTM under canopy",

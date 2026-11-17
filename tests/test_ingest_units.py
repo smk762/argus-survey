@@ -74,3 +74,17 @@ def test_geoid_grids_only_from_vgridshift() -> None:
         proj="+proj=pipeline +step +proj=hgridshift +grids=h.tif +step +inv +proj=vgridshift +grids=@g.tif +multiplier=1",
     )
     assert geoid_grids(op) == ["g.tif"]
+
+
+def test_reset_forgets_every_step_including_ingest(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """A --force re-ingest that then fails must not leave the sidecar claiming ingest is done."""
+    from argus_survey.ingest import _reset
+    from argus_survey.jobs import JobStore
+
+    job = JobStore(tmp_path).open("x", create=True)
+    (job.dir / "points.copc.laz").write_bytes(b"copc")
+    job.add_product("copc", "points.copc.laz", step="ingest")
+    job.sidecar.steps_done = ["ingest", "qa", "ground"]
+    _reset(job)
+    assert job.sidecar.steps_done == [] and job.sidecar.products == {}
+    assert not (job.dir / "points.copc.laz").exists()

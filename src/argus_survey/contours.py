@@ -8,8 +8,10 @@ The ``index`` attribute is 1 on every N-th contour (multiples of interval × N).
 
 from __future__ import annotations
 
+import math
+
 from argus_survey.jobs import Job
-from argus_survey.models import ContoursReport, SurveyError
+from argus_survey.models import MIN_INTERVAL_M, ContoursReport, SurveyError
 from argus_survey.tools import run, run_json
 
 STEP = "contours"
@@ -18,8 +20,8 @@ LAYER = "contours"
 
 def contours(job: Job, *, interval: float, index: int | None = 5, source: str = "dtm") -> ContoursReport:
     job.require_crs(STEP, height=True)
-    if interval <= 0:
-        raise SurveyError("--interval must be positive (metres)")
+    if not math.isfinite(interval) or interval < MIN_INTERVAL_M:
+        raise SurveyError(f"--interval must be a finite number of metres, at least {MIN_INTERVAL_M}")
     if index is not None and index < 2:
         raise SurveyError("--index must be 2 or more (every N-th contour is an index contour)")
     dem = job.product_path(source, needed_by=STEP)
