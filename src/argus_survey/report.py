@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import html
 import json
+import shlex
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -66,8 +67,26 @@ a { color: #1f5fa8; }
 """
 
 
-def e(value: Any) -> str:
-    return html.escape("" if value is None else str(value))
+class Html(str):
+    """Markup that is already safe to emit as-is. Everything else put into a cell is escaped."""
+
+    __slots__ = ()
+
+    def __add__(self, other: str) -> Html:
+        """``Html + x`` stays safe: a plain *x* is escaped first (as markupsafe does)."""
+        return Html(str.__add__(self, e(other)))
+
+
+def e(value: Any) -> Html:
+    """HTML-escape *value* (``None`` → empty); already-safe :class:`Html` passes through unchanged."""
+    if isinstance(value, Html):
+        return value
+    return Html(html.escape("" if value is None else str(value)))
+
+
+def cell(value: Any) -> str:
+    """A table cell's contents: :class:`Html` as-is, anything else (str, number, None) escaped."""
+    return value if isinstance(value, Html) else e(value)
 
 
 def num(value: float | None, digits: int = 3, unit: str = "") -> str:
@@ -83,19 +102,21 @@ def params(d: dict[str, Any]) -> str:
     )
 
 
-def kv(rows: list[tuple[str, str]]) -> str:
-    body = "".join(f"<tr><th>{e(k)}</th><td>{v}</td></tr>" for k, v in rows)
+def kv(rows: list[tuple[str, Any]]) -> str:
+    """A key/value table. Values are escaped unless they are :class:`Html`."""
+    body = "".join(f"<tr><th>{e(k)}</th><td>{cell(v)}</td></tr>" for k, v in rows)
     return f'<table class="kv">{body}</table>'
 
 
-def table(headers: list[str], rows: list[list[str]], numeric: set[int] | None = None) -> str:
+def table(headers: list[str], rows: list[list[Any]], numeric: set[int] | None = None) -> str:
+    """A table with a header row. Cells are escaped unless they are :class:`Html`."""
     numeric = numeric or set()
     head = "".join(
         f'<th class="num">{e(h)}</th>' if i in numeric else f"<th>{e(h)}</th>" for i, h in enumerate(headers)
     )
     body = "".join(
         "<tr>"
-        + "".join(f'<td class="num">{c}</td>' if i in numeric else f"<td>{c}</td>" for i, c in enumerate(r))
+        + "".join(f'<td class="num">{cell(c)}</td>' if i in numeric else f"<td>{cell(c)}</td>" for i, c in enumerate(r))
         + "</tr>"
         for r in rows
     )
@@ -139,7 +160,7 @@ def thumbnail(job: Job, kind: str, *, color: list[tuple[float, tuple[int, int, i
 def figure(uri: str | None, caption: str) -> str:
     if uri is None:
         return ""
-    return f'<figure><img src="{uri}" alt="{e(caption)}"><figcaption>{e(caption)}</figcaption></figure>'
+    return f'<figure><img src="{e(uri)}" alt="{e(caption)}"><figcaption>{e(caption)}</figcaption></figure>'
 
 
 VIRIDIS = [(68, 1, 84), (59, 82, 139), (33, 145, 140), (94, 201, 98), (253, 231, 37)]
@@ -186,7 +207,7 @@ def section_crs(job: Job) -> str:
         ("CRS", e(c.name)),
         (
             "Definition",
-            f"<code>{e(c.definition if len(c.definition) < 200 else '(WKT/PROJJSON, see job.json)')}</code>",
+            Html(f"<code>{e(c.definition if len(c.definition) < 200 else '(WKT/PROJJSON, see job.json)')}</code>"),
         ),
         ("Horizontal", e(f"{h.name}" + (f" (EPSG:{h.epsg})" if h.epsg else "") + f", {h.units}")),
     ]
@@ -199,10 +220,10 @@ def section_crs(job: Job) -> str:
             )
         )
     else:
-        rows.append(("Vertical", '<strong style="color:var(--bad)">none</strong>'))
+        rows.append(("Vertical", Html('<strong style="color:var(--bad)">none</strong>')))
     rows.append(("Geoid model applied", e(c.geoid or "none (no height transformation)")))
     if c.vertical_assumed:
-        rows.append(("Assumption", f'<strong style="color:var(--bad)">{e(c.vertical_assumed)}</strong>'))
+        rows.append(("Assumption", Html(f'<strong style="color:var(--bad)">{e(c.vertical_assumed)}</strong>')))
     if c.epoch is not None:
         rows.append(("Coordinate epoch", e(c.epoch)))
     out = ["<h2>Coordinate reference</h2>", kv(rows)]
@@ -223,7 +244,7 @@ def section_crs(job: Job) -> str:
             if sf.geoid_separation_m is not None:
                 h += f" (mean height {sf.height_m:.3f} m + geoid separation {sf.geoid_separation_m:.3f} m)"
             srows.append(("Height factor R/(R+h)", e(f"{sf.height_factor:.8f}, h = {h}, R = {sf.radius_m:,.1f} m")))
-            srows.append(("Combined scale factor", f"<strong>{e(f'{sf.combined:.8f}')}</strong>"))
+            srows.append(("Combined scale factor", Html(f"<strong>{e(f'{sf.combined:.8f}')}</strong>")))
         else:
             srows.append(("Combined scale factor", "not known (no vertical datum, so no height factor)"))
         out.append(
@@ -251,17 +272,17 @@ def section_crs(job: Job) -> str:
                         ("Stated accuracy", num(t.accuracy_m, 3, " m") if t.accuracy_m is not None else "unknown"),
                         ("Grids", e(", ".join(t.grids) or "none")),
                         ("Chosen by", e(t.chosen_by)),
-                        ("PROJ pipeline", f"<pre>{e(t.proj)}</pre>"),
-                        ("Candidates considered", f"<ol>{cand}</ol>"),
+                        ("PROJ pipeline", Html(f"<pre>{e(t.proj)}</pre>")),
+                        ("Candidates considered", Html(f"<ol>{cand}</ol>")),
                     ]
                 )
             )
         inputs = [
             [
-                f"<code>{e(Path(i.path).name)}</code>",
+                Html(f"<code>{e(Path(i.path).name)}</code>"),
                 e(f"{i.summary.count:,}" if i.summary else "?"),
                 e(f"{i.size:,}"),
-                f'<span class="sha">{e(i.sha256)}</span>',
+                Html(f'<span class="sha">{e(i.sha256)}</span>'),
             ]
             for i in s.inputs
         ]
@@ -282,8 +303,8 @@ def section_qa(job: Job) -> str:
                 ("Points", e(f"{q.points:,}")),
                 (
                     "Covered area",
-                    e(f"{q.coverage_area_m2:,.1f} m²") + f' <span class="note">(hexbin boundary, edge '
-                    f"{q.coverage_hex_edge} m)</span>",
+                    e(f"{q.coverage_area_m2:,.1f} m²")
+                    + Html(f' <span class="note">(hexbin boundary, edge {e(q.coverage_hex_edge)} m)</span>'),
                 ),
                 ("Height range", e(f"{b.minz:.3f} … {b.maxz:.3f} m")),
                 (
@@ -392,7 +413,7 @@ def section_surfaces(job: Job) -> str:
             [
                 e(kind.upper()),
                 e(r.method),
-                e(f"{r.void_percent:.2f}%") + (f"<br>{e(fill)}" if fill else ""),
+                e(f"{r.void_percent:.2f}%") + (Html(f"<br>{e(fill)}") if fill else ""),
                 e(f"{num(r.stats.minimum)} … {num(r.stats.maximum)}"),
             ]
         )
@@ -471,6 +492,18 @@ def _volume_table(v: VolumeReport) -> str:
     return t + f"<ul class='note'>{bases}</ul>" + "".join(f'<p class="note">{e(n)}</p>' for n in notes)
 
 
+def dod_ramp(lod_m: float) -> tuple[list[tuple[float, tuple[int, int, int]]], float]:
+    """Colour stops for a DoD thumbnail, strictly increasing, and the |Δ| (m) where colours saturate.
+
+    Saturation is ±1 m, or ±2·LoD when the LoD is 0.5 m or more, so the ±LoD stops always sit inside it;
+    a zero LoD drops them (the ramp is then loss blue → white at 0 → gain red).
+    """
+    sat = max(1.0, 2 * lod_m)
+    inner = [(-lod_m, (146, 197, 222))] if lod_m > 0 else []
+    outer = [(lod_m, (244, 165, 130))] if lod_m > 0 else []
+    return [(-sat, (33, 102, 172)), *inner, (0.0, (247, 247, 247)), *outer, (sat, (178, 24, 43))], sat
+
+
 def section_volumes(job: Job) -> str:
     s = job.sidecar
     out: list[str] = []
@@ -491,9 +524,9 @@ def section_volumes(job: Job) -> str:
                     (
                         "Compared with",
                         e(f"job {c.against_job}")
-                        + f' <span class="sha">(job.json {e(c.against_sidecar_sha256)})</span>',
+                        + Html(f' <span class="sha">(job.json {e(c.against_sidecar_sha256)})</span>'),
                     ),
-                    ("This job", f'<span class="sha">job.json {e(c.this_sidecar_sha256)} at comparison</span>'),
+                    ("This job", Html(f'<span class="sha">job.json {e(c.this_sidecar_sha256)} at comparison</span>')),
                     ("Surface / area", e(f"{c.surface.upper()} · {c.area} · {c.res} m cells")),
                     ("Level of detection", e(f"{c.lod_m} m ({c.lod_rule}); |Δ| below it is 'no detectable change'")),
                     ("Gain", e(f"{c.gain_m3:,.2f} m³ over {c.gain_area_m2:,.1f} m²")),
@@ -510,17 +543,12 @@ def section_volumes(job: Job) -> str:
             )
         )
         lod_kind = f"dod_{c.surface}_lod" if f"dod_{c.surface}_lod" in s.products else "dod_lod"
-        ramp = [
-            (-1.0, (33, 102, 172)),
-            (-c.lod_m, (146, 197, 222)),
-            (0, (247, 247, 247)),
-            (c.lod_m, (244, 165, 130)),
-            (1.0, (178, 24, 43)),
-        ]
+        ramp, sat = dod_ramp(c.lod_m)
         out.append(
             figure(
                 thumbnail(job, lod_kind, color=ramp),
-                "DoD beyond the LoD: red = gain, blue = loss, white = no detectable change (colours saturate at ±1 m)",
+                "DoD beyond the LoD: red = gain, blue = loss, white = no detectable change "
+                f"(colours saturate at ±{sat:g} m)",
             )
         )
     if changes:
@@ -541,7 +569,8 @@ def section_accuracy(job: Job) -> str:
                 ("Surface tested", e(f"{a.surface.upper()}, sampled {a.sampling}")),
                 (
                     "Check points",
-                    e(f"{Path(a.checks_file.path).name}") + f' <span class="sha">{e(a.checks_file.sha256)}</span>',
+                    e(f"{Path(a.checks_file.path).name}")
+                    + Html(f' <span class="sha">{e(a.checks_file.sha256)}</span>'),
                 ),
                 (
                     "Check point CRS",
@@ -567,7 +596,7 @@ def section_accuracy(job: Job) -> str:
             num(g.rmse_data_m),
             num(g.rmse_m),
             "pass/fail" if g.pass_fail_applies else "reported as found",
-            "yes" if g.meets_minimum_count else '<strong style="color:var(--bad)">no</strong>',
+            "yes" if g.meets_minimum_count else Html('<strong style="color:var(--bad)">no</strong>'),
         ]
         for g in a.groups
     ]
@@ -635,10 +664,10 @@ def section_products(job: Job) -> str:
     rows = [
         [
             e(k),
-            f"<code>{e(p.path)}</code>",
+            Html(f"<code>{e(p.path)}</code>"),
             e(p.description),
             e(f"{p.size:,}"),
-            f'<span class="sha">{e(p.sha256)}</span>',
+            Html(f'<span class="sha">{e(p.sha256)}</span>'),
         ]
         for k, p in sorted(job.sidecar.products.items())
         if k != "report"
@@ -661,7 +690,8 @@ def section_commands(job: Job) -> str:
 
 
 def _quote(arg: str) -> str:
-    return f"'{arg}'" if any(ch in arg for ch in " ()[]{}*?&|;<>$\"'") else arg
+    """POSIX-shell quoting for the printed command log (display only; nothing is ever run through a shell)."""
+    return shlex.quote(arg)
 
 
 def report(job: Job) -> Path:

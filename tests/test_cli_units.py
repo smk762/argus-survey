@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -18,7 +19,11 @@ def test_cli_dependencies_are_in_the_base_install() -> None:
     """The `argus-survey` script is installed for everyone, so what cli.py imports must not hide in an extra."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     assert project["scripts"]["argus-survey"] == "argus_survey.cli:app"
-    base = {dep.split(">")[0].split("=")[0].split("[")[0].strip() for dep in project["dependencies"]}
+    # PEP 508 name, normalised per PEP 503 ("rich~=13", "Typer<1,>=0.9", "structlog; python_version>'3'" all parse)
+    base = {
+        re.sub(r"[-_.]+", "-", re.match(r"\s*([A-Za-z0-9._-]+)", dep).group(1)).lower()
+        for dep in project["dependencies"]
+    }
     assert {"typer", "rich", "pydantic", "structlog"} <= base
 
 

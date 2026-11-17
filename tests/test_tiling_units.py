@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from argus_survey import tiling
@@ -43,3 +45,39 @@ def test_cores_partition_the_padded_extent() -> None:
     for i in range(0, 301, 7):
         for j in range(0, 201, 7):
             assert sum(_inside(t, float(i), float(j)) for t in p.tiles) == 1
+
+
+def _fake_untwine(monkeypatch: pytest.MonkeyPatch, *, fail: bool) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **_kw):  # type: ignore[no-untyped-def]
+        calls.append(list(argv))
+        out, tmp = Path(argv[argv.index("-o") + 1]), Path(argv[argv.index("--temp_dir") + 1])
+        tmp.mkdir()
+        (tmp / "scratch.bin").write_bytes(b"x" * 10)
+        out.write_bytes(b"half a cop" if fail else b"new copc")
+        if fail:
+            raise tiling.SurveyError("untwine died")
+
+    monkeypatch.setattr(tiling, "run", fake_run)
+    return calls
+
+
+def test_untwine_failure_keeps_the_old_output_and_cleans_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_untwine(monkeypatch, fail=True)
+    out, scratch = tmp_path / "points.copc.laz", tmp_path / ".untwine-tmp"
+    out.write_bytes(b"old copc")
+    with pytest.raises(tiling.SurveyError, match="untwine died"):
+        tiling.untwine(tmp_path / "parts", out, temp_dir=scratch, step="t", sink=None)
+    assert out.read_bytes() == b"old copc"  # neither deleted nor truncated
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["points.copc.laz"]  # no partial file, no scratch
+
+
+def test_untwine_success_replaces_the_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _fake_untwine(monkeypatch, fail=False)
+    out, scratch = tmp_path / "points.copc.laz", tmp_path / ".untwine-tmp"
+    out.write_bytes(b"old copc")
+    tiling.untwine(tmp_path / "parts", out, temp_dir=scratch, step="t", sink=None)
+    assert out.read_bytes() == b"new copc"
+    assert calls[0][calls[0].index("-o") + 1].endswith(".copc.laz")  # untwine keys COPC output on the suffix
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["points.copc.laz"]

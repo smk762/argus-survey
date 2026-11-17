@@ -49,8 +49,12 @@ def test_process_routes_403_when_read_only(roots) -> None:  # type: ignore[no-un
 
 
 def test_inputs_lists_names_not_paths(roots) -> None:  # type: ignore[no-untyped-def]
+    data, _ = roots
+    (data / ".cache" / "deep").mkdir(parents=True)  # hidden dirs are pruned, not listed
+    (data / ".cache" / "deep" / "b.laz").write_bytes(b"x")
+    (data / "site" / "0.laz").write_bytes(b"x")
     body = client(roots, False).get("/inputs").json()
-    assert body["points"] == ["site/a.laz"] and body["vectors"] == ["pile.geojson"]
+    assert body["points"] == ["site/0.laz", "site/a.laz"] and body["vectors"] == ["pile.geojson"]
 
 
 @pytest.mark.parametrize("bad", ["../secret.laz", "/etc/passwd", "site/../../secret.laz"])

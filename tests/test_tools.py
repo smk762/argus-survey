@@ -64,9 +64,16 @@ def test_parse_version(pattern, text: str, expected: str | None) -> None:  # typ
 
 
 def test_read_grid_manifest(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    a, b, c, d = "a" * 64, "B" * 64, "c" * 64, "d" * 64
     p = tmp_path / "m.sha256"
-    p.write_text("abc  one.tif\n# comment\ndef *two.tif\n\n")
-    assert tools.read_grid_manifest(p) == {"one.tif": "abc", "two.tif": "def"}
+    lines = [f"{a}  one.tif", "# comment", f"{b} *two.tif", "", f"{c}  my tile.tif", f"\\{d}  back\\\\slash\\nnl.tif"]
+    p.write_text("\n".join(lines + ["not a manifest line", "abc  short.tif"]) + "\n")
+    assert tools.read_grid_manifest(p) == {
+        "one.tif": a,
+        "two.tif": "b" * 64,
+        "my tile.tif": c,
+        "back\\slash\nnl.tif": d,
+    }
 
 
 @pytest.mark.tools
@@ -101,4 +108,36 @@ def test_fatal_stderr_turns_exit_zero_into_failure() -> None:
     records: list[CommandRecord] = []
     with pytest.raises(tools.ToolError, match="refused"):
         tools.run([sys.executable, "-c", code], step="t", sink=records.append, fatal_stderr=("falls outside grid",))
-    assert records[0].returncode == 0
+    assert len(records) == 1 and records[0].returncode == tools.RC_REFUSED  # the log must not read as a success
+
+
+def test_run_missing_tool_is_recorded() -> None:
+    records: list[CommandRecord] = []
+    with pytest.raises(tools.ToolMissing):
+        tools.run(["definitely-not-a-tool-xyz"], step="t", sink=records.append)
+    assert [r.returncode for r in records] == [tools.RC_MISSING]
+
+
+def test_run_timeout_is_recorded_with_stderr() -> None:
+    records: list[CommandRecord] = []
+    code = "import sys, time; sys.stderr.write('stuck here\\n'); sys.stderr.flush(); time.sleep(30)"
+    with pytest.raises(tools.ToolError, match="timed out") as info:
+        tools.run([sys.executable, "-c", code], step="t", sink=records.append, timeout=1.5)
+    assert info.value.returncode == tools.RC_TIMEOUT and "stuck here" in info.value.stderr_tail
+    assert [r.returncode for r in records] == [tools.RC_TIMEOUT] and records[0].seconds >= 1
+
+
+def test_gdal_algorithm_probe_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tools.shutil, "which", lambda _name: "/usr/bin/gdal")
+
+    def hang(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise tools.subprocess.TimeoutExpired(["gdal"], 30)
+
+    monkeypatch.setattr(tools.subprocess, "run", hang)
+    assert tools._gdal_algorithm_ok("calc") is False
+
+    def broken(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise PermissionError("not executable")
+
+    monkeypatch.setattr(tools.subprocess, "run", broken)
+    assert tools._gdal_algorithm_ok("calc") is False

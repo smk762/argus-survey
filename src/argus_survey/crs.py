@@ -36,6 +36,21 @@ _SUMMARY = re.compile(r"^(?P<id>[^,]+), (?P<name>.+?), (?P<acc>\d+(?:\.\d+)? m|u
 _GRIDS = re.compile(r"\+grids=(\S+)")
 
 
+def check_definition(definition: str) -> str:
+    """Refuse a CRS definition that PROJ/GDAL tools would read as an option or a file, not a CRS.
+
+    Definitions reach ``projinfo``/``gdaltransform`` argv from users (CLI and API). A leading ``-``
+    would be parsed as an option (``--searchpaths``, ``-s``), and ``projinfo`` reads ``@path`` as
+    "load the definition from this file" — a local file read. Neither is a CRS: EPSG codes, WKT,
+    PROJJSON and ``+proj=`` strings never start with either.
+    """
+    if definition.lstrip().startswith(("-", "@")):
+        raise SurveyError(
+            f"{definition!r} is not a CRS definition; give an EPSG code (EPSG:7850+5711), WKT, PROJJSON or a PROJ string"
+        )
+    return definition
+
+
 class ParsedOperation(OperationCandidate):
     proj: str
 
@@ -95,6 +110,8 @@ def select_operation(
     to pin a specific candidate; otherwise PROJ's ranking is used, skipping candidates whose grids
     are absent. Ballpark operations are never candidates.
     """
+    check_definition(source)
+    check_definition(target)
     argv = ["projinfo", "-s", source, "-t", target, "--spatial-test", "intersects", "--hide-ballpark", "-o", "PROJ"]
     if bbox_lonlat is not None:
         argv += ["--bbox", ",".join(f"{v:.6f}" for v in bbox_lonlat)]
@@ -121,12 +138,16 @@ def select_operation(
         if not matches:
             names = "; ".join(c.name for c in candidates)
             raise SurveyError(f"no operation from {source} to {target} matches {prefer!r} (candidates: {names})")
-        chosen = matches[0]
-        if candidates[chosen].missing_grids:
+        # a substring can match several operations ("GDA94 to GDA2020" matches (1), (2), (3)): take the first
+        # whose grids are on disk, and refuse only when none of the matches is usable
+        usable_matches = [i for i in matches if not candidates[i].missing_grids]
+        if not usable_matches:
+            first = candidates[matches[0]]
             raise SurveyError(
-                f"operation {candidates[chosen].name!r} needs grid(s) not on disk: "
-                f"{', '.join(candidates[chosen].missing_grids)} — run `argus-survey doctor`"
+                f"operation {first.name!r} needs grid(s) not on disk: "
+                f"{', '.join(first.missing_grids)} — run `argus-survey doctor`"
             )
+        chosen = usable_matches[0]
     elif usable:
         chosen = usable[0]
     else:
@@ -195,6 +216,14 @@ def _ellipsoidal_axis(obj: dict[str, Any]) -> tuple[str, float] | None:
 
 def record_from_projjson(pj: dict[str, Any], *, definition: str | None = None, source: str = "file") -> CrsRecord:
     """Build a :class:`CrsRecord` from PROJJSON (as ``pdal info`` and ``projinfo -o PROJJSON`` print it)."""
+    wrapper: dict[str, Any] | None = None
+    epoch: float | None = None
+    if pj.get("type") == "CoordinateMetadata":  # a CRS at a coordinate epoch (``EPSG:7912@2020.5``)
+        wrapper = pj
+        raw = pj.get("coordinateEpoch")
+        if isinstance(raw, int | float) and not isinstance(raw, bool):
+            epoch = float(raw)
+        pj = pj["crs"]
     if pj.get("type") == "BoundCRS":  # WKT1 TOWGS84 wrapper — the CRS itself is the source
         pj = pj["source_crs"]
     kind = pj.get("type")
@@ -229,8 +258,9 @@ def record_from_projjson(pj: dict[str, Any], *, definition: str | None = None, s
         elif kind == "CompoundCRS" and horizontal.epsg is not None and v_code is not None:
             definition = f"EPSG:{horizontal.epsg}+{v_code}"
         else:  # PROJ and PDAL both accept PROJJSON as a CRS definition
-            definition = json.dumps(pj, separators=(",", ":"))
-    epoch = pj.get("coordinate_epoch") if isinstance(pj.get("coordinate_epoch"), int | float) else None
+            definition = json.dumps(wrapper if wrapper is not None else pj, separators=(",", ":"))
+        if epoch is not None and definition.startswith("EPSG:"):
+            definition = f"{definition}@{epoch:g}"  # keep the epoch in what PROJ is given, not only in the record
     return CrsRecord(
         definition=definition,
         name=str(pj.get("name", horizontal.name)),
@@ -252,6 +282,7 @@ def record_from_pdal_srs(srs: dict[str, Any]) -> CrsRecord | None:
 
 def describe(definition: str, *, sink: CommandSink | None = None, step: str = "crs", source: str = "user") -> CrsRecord:
     """Resolve any PROJ CRS definition (``EPSG:7850+5711``, WKT, PROJJSON) to a record."""
+    check_definition(definition)
     try:
         pj = run_json(["projinfo", "-o", "PROJJSON", "-q", definition], step=step, sink=sink)
     except SurveyError as exc:
@@ -263,6 +294,7 @@ def describe(definition: str, *, sink: CommandSink | None = None, step: str = "c
 
 def promote_3d(definition: str, *, sink: CommandSink | None = None, step: str = "crs") -> str:
     """A 2D CRS promoted to 3D (ellipsoidal height on its own datum), as single-line WKT2."""
+    check_definition(definition)
     out = run(["projinfo", "--3d", "-o", "WKT2_2019", "--single-line", "-q", definition], step=step, sink=sink)
     return out.stdout.strip()
 
@@ -284,14 +316,21 @@ MERCATOR_EPSG = {3857, 3395, 900913, 3785, 102100}
 
 
 def require_survey_projection(record: CrsRecord, what: str) -> None:
-    """Refuse a geographic or Web Mercator working CRS: distances, areas and volumes would be wrong.
+    """Refuse a geographic, geocentric or (Web) Mercator working CRS: distances, areas and volumes would be wrong.
 
-    At 32° S a Web Mercator metre is 1.18 ground metres, so areas come out ~40 % large.
+    At 32° S a Web Mercator metre is 1.18 ground metres, so areas come out ~40 % large. Transverse
+    and oblique Mercator (Hotine: Michigan, Swiss LV95, RSO) are conformal survey projections and pass.
     """
     h = record.horizontal
     if h.kind == "GeographicCRS":
         raise SurveyError(f"{what} is geographic (degrees); pass --t-srs with a projected CRS (e.g. EPSG:7850+5711)")
-    if h.epsg in MERCATOR_EPSG or "mercator" in h.name.lower() and "transverse" not in h.name.lower():
+    if h.kind in {"GeodeticCRS", "GeocentricCRS"}:
+        raise SurveyError(
+            f"{what} is geocentric (earth-centred X/Y/Z), not a map plane; pass --t-srs with a projected CRS "
+            "(e.g. EPSG:7850+5711)"
+        )
+    name = h.name.lower()
+    if h.epsg in MERCATOR_EPSG or "mercator" in name and "transverse" not in name and "oblique" not in name:
         raise SurveyError(
             f"{what} is {h.name}: Mercator 'metres' are not ground metres (×1/cos latitude), so areas and volumes "
             "would be badly wrong. Pass --t-srs with a survey projection (MGA2020 zone, PCG2020, UTM, …)"
@@ -336,7 +375,12 @@ def pdal_coord_op(op: TransformOp, source: CrsRecord, target: CrsRecord) -> str:
 def lonlat_bbox(
     definition: str, bounds: Bounds3D, *, sink: CommandSink | None = None, step: str = "crs"
 ) -> tuple[float, float, float, float]:
-    """(west, south, east, north) in degrees for *bounds* given in *definition*, from its corners and edge midpoints."""
+    """(west, south, east, north) in degrees for *bounds* given in *definition*, from its corners and edge midpoints.
+
+    An extent across the antimeridian comes back with west > east (the GeoJSON/STAC convention, and what
+    ``projinfo --bbox`` expects), not as a near-global box.
+    """
+    check_definition(definition)
     xs = (bounds.minx, (bounds.minx + bounds.maxx) / 2, bounds.maxx)
     ys = (bounds.miny, (bounds.miny + bounds.maxy) / 2, bounds.maxy)
     pts = "\n".join(f"{x!r} {y!r}" for x in xs for y in ys) + "\n"
@@ -354,4 +398,17 @@ def lonlat_bbox(
                 lats.append(lat)
     if not lons:
         raise SurveyError(f"could not place the data's extent on the globe from {definition!r}")
-    return min(lons), min(lats), max(lons), max(lats)
+    west, east = lon_extent(lons)
+    return west, min(lats), east, max(lats)
+
+
+def lon_extent(lons: list[float]) -> tuple[float, float]:
+    """(west, east) of sample longitudes; west > east when they straddle ±180° rather than span the globe."""
+    west, east = min(lons), max(lons)
+    if east - west <= 180:
+        return west, east
+    shifted = [lon + 360 if lon < 0 else lon for lon in lons]  # 179.9 and -179.9 become 179.9 and 180.1
+    w, e = min(shifted), max(shifted)
+    if e - w > 180:  # genuinely wider than a hemisphere either way: keep the plain extent
+        return west, east
+    return (w - 360 if w > 180 else w), (e - 360 if e > 180 else e)

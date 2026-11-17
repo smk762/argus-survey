@@ -94,6 +94,13 @@ OPTIONAL_GRIDS: tuple[str, ...] = (
 )
 
 
+# Exit statuses recorded for commands that never produced a real one (or whose zero exit was refused), so the
+# sidecar's command log shows them as failures. Shell conventions: 124 = timed out (GNU timeout), 127 = not found.
+RC_TIMEOUT = 124
+RC_REFUSED = 125  # exited 0, but stderr carried a *fatal_stderr* pattern
+RC_MISSING = 127
+
+
 class ToolError(SurveyError):
     """An external tool exited non-zero."""
 
@@ -132,11 +139,30 @@ def run(
     """Run one external command. Records it to *sink* (even when it fails), raises on non-zero exit.
 
     *fatal_stderr*: substrings that make a zero exit a failure. PDAL, for one, logs per-point
-    reprojection errors and still exits 0 — a silent datum failure we refuse to accept.
+    reprojection errors and still exits 0 — a silent datum failure we refuse to accept. Such a
+    refusal is recorded with ``returncode`` :data:`RC_REFUSED`; a timeout with :data:`RC_TIMEOUT`
+    and a missing executable with :data:`RC_MISSING`.
     """
     argv = [str(a) for a in argv]
     started_at = utcnow()
     t0 = time.perf_counter()
+
+    def record(returncode: int) -> CommandRecord:
+        seconds = round(time.perf_counter() - t0, 3)
+        rec = CommandRecord(
+            step=step,
+            tool=Path(argv[0]).name,
+            argv=argv,
+            pipeline=pipeline,
+            started_at=started_at,
+            seconds=seconds,
+            returncode=returncode,
+        )
+        if sink is not None:
+            sink(rec)
+        log.info("tool.run", step=step, tool=rec.tool, seconds=seconds, returncode=returncode)
+        return rec
+
     try:
         proc = subprocess.run(
             argv,
@@ -149,29 +175,21 @@ def run(
             check=False,
         )
     except FileNotFoundError as exc:
+        record(RC_MISSING)
         raise ToolMissing(f"{argv[0]} is not on PATH — run `argus-survey doctor`") from exc
     except subprocess.TimeoutExpired as exc:
-        raise ToolError(argv, -1, f"timed out after {timeout}s") from exc
-    seconds = round(time.perf_counter() - t0, 3)
-    record = CommandRecord(
-        step=step,
-        tool=Path(argv[0]).name,
-        argv=argv,
-        pipeline=pipeline,
-        started_at=started_at,
-        seconds=seconds,
-        returncode=proc.returncode,
-    )
-    if sink is not None:
-        sink(record)
-    log.info("tool.run", step=step, tool=record.tool, seconds=seconds, returncode=proc.returncode)
+        record(RC_TIMEOUT)
+        stderr = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        log.warning("tool.timeout", step=step, argv=argv, timeout=timeout, stderr=stderr[-STDERR_TAIL:])
+        raise ToolError(argv, RC_TIMEOUT, f"{stderr}\ntimed out after {timeout}s") from exc
+    hits = [pat for pat in fatal_stderr if pat in proc.stderr] if proc.returncode == 0 else []
+    record(RC_REFUSED if hits else proc.returncode)
     if proc.returncode != 0:
         log.warning("tool.failed", step=step, argv=argv, stderr=proc.stderr[-STDERR_TAIL:])
         raise ToolError(argv, proc.returncode, proc.stderr)
-    hits = [pat for pat in fatal_stderr if pat in proc.stderr]
     if hits:
         log.warning("tool.fatal_stderr", step=step, argv=argv, patterns=hits)
-        raise ToolError(argv, proc.returncode, f"{proc.stderr}\nrefused: stderr reported {hits[0]!r}")
+        raise ToolError(argv, RC_REFUSED, f"{proc.stderr}\nrefused: stderr reported {hits[0]!r}")
     return proc
 
 
@@ -279,13 +297,26 @@ def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
+# `<hash>  <name>` (text mode) or `<hash> *<name>` (binary); a leading `\\` marks an escaped name (GNU coreutils).
+_MANIFEST_LINE = re.compile(r"^(\\?)([0-9a-fA-F]{64}) [ *](.+)$")
+
+
+def _unescape_manifest_name(name: str) -> str:
+    return re.sub(r"\\(.)", lambda m: {"n": "\n", "r": "\r", "\\": "\\"}.get(m.group(1), m.group(0)), name)
+
+
 def read_grid_manifest(path: Path) -> dict[str, str]:
-    """``sha256sum``-format lines -> ``{filename: sha256}``."""
+    """``sha256sum``-format lines -> ``{filename: sha256}``. A line that is not that format is logged and skipped."""
     rows: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        parts = line.split()
-        if len(parts) == 2 and not line.startswith("#"):
-            rows[parts[1].lstrip("*")] = parts[0]
+    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip() or line.startswith("#"):
+            continue
+        m = _MANIFEST_LINE.match(line)
+        if m is None:
+            log.warning("grid_manifest.bad_line", path=str(path), line=n)
+            continue
+        escaped, digest, name = m.groups()
+        rows[_unescape_manifest_name(name) if escaped else name] = digest.lower()
     return rows
 
 
@@ -311,9 +342,12 @@ def _gdal_drivers() -> set[str]:
 def _gdal_algorithm_ok(name: str) -> bool:
     if shutil.which("gdal") is None:
         return False
-    proc = subprocess.run(
-        ["gdal", "raster", name, "--help"], capture_output=True, text=True, env=child_env(), timeout=30, check=False
-    )
+    try:
+        proc = subprocess.run(
+            ["gdal", "raster", name, "--help"], capture_output=True, text=True, env=child_env(), timeout=30, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
     return proc.returncode == 0
 
 

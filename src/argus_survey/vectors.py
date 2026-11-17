@@ -12,6 +12,7 @@ import csv
 import io
 import math
 import re
+import sys
 import tempfile
 from pathlib import Path
 
@@ -23,13 +24,30 @@ Point = tuple[float, float]
 Ring = list[Point]
 
 
-def _check_declared_crs(path: Path, src_srs: str | None, *, sink: CommandSink | None, step: str, flag: str) -> None:
-    if src_srs is not None:
-        return
+def allow_large_csv_fields() -> None:
+    """Lift the csv module's 128 KiB field limit: a detailed polygon's WKT is one field and easily exceeds it."""
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            return
+        except OverflowError:  # a C long narrower than Py_ssize_t (e.g. Windows)
+            limit //= 2
+
+
+def _check_layers_and_crs(path: Path, src_srs: str | None, *, sink: CommandSink | None, step: str, flag: str) -> None:
     info = run_json(["ogrinfo", "-json", "-so", "-al", str(path)], step=step, sink=sink)
     layers = info.get("layers") or []
     if not layers:
         raise SurveyError(f"{path.name} has no vector layer")
+    if len(layers) > 1:
+        names = ", ".join(repr(layer.get("name")) for layer in layers)
+        raise SurveyError(
+            f"{path.name} has {len(layers)} layers ({names}); give a file with one layer "
+            f"(e.g. ogr2ogr out.gpkg {path.name} <layer>)"
+        )
+    if src_srs is not None:
+        return
     fields = layers[0].get("geometryFields") or [{}]
     declared = (fields[0].get("coordinateSystem") or {}).get("projjson")
     extent = fields[0].get("extent") or layers[0].get("extent")
@@ -56,11 +74,12 @@ def read_features(
     flag: str = "--polygon-srs",
 ) -> list[tuple[str, str]]:
     """``(name, wkt)`` of every feature of *path* whose geometry type starts with one of *kinds*, in *target*."""
-    _check_declared_crs(path, src_srs, sink=sink, step=step, flag=flag)
+    _check_layers_and_crs(path, src_srs, sink=sink, step=step, flag=flag)
     argv = ["ogr2ogr", "-f", "CSV", "/vsistdout/", str(path), "-t_srs", target, "-lco", "GEOMETRY=AS_WKT"]
     if src_srs is not None:
         argv[5:5] = ["-s_srs", src_srs]
     out = run(argv, step=step, sink=sink).stdout
+    allow_large_csv_fields()
     rows = list(csv.DictReader(io.StringIO(out)))
     feats: list[tuple[str, str]] = []
     for i, row in enumerate(rows, 1):

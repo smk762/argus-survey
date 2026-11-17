@@ -23,19 +23,22 @@ COLOURS = {"dtm": "#8a5a2b", "dsm": "#2e7d32", "chm": "#1565c0", "design": "#c62
 
 
 def nice_ticks(lo: float, hi: float, target: int = 6) -> list[float]:
-    """Round tick positions covering [lo, hi]."""
-    if hi <= lo:
-        hi = lo + 1.0
+    """Round tick positions covering [lo, hi]; none if either bound is not finite."""
+    if not (math.isfinite(lo) and math.isfinite(hi)):
+        return []
+    # a span below what the values can resolve (or none) is widened, so ticks are distinct numbers
+    if hi - lo < max(abs(lo), abs(hi)) * 1e-9 or hi <= lo:
+        hi = lo + max(1.0, abs(lo) * 1e-6)
     raw = (hi - lo) / target
     mag = 10 ** math.floor(math.log10(raw))
     step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
     start = math.floor(lo / step) * step
+    n = math.floor((hi - start) / step + 1e-9) + 1  # indexed, not accumulated: no drift, always ends
     ticks = []
-    t = start
-    while t <= hi + step * 1e-9:
+    for i in range(min(n, 10 * target + 2)):
+        t = start + i * step
         if t >= lo - step * 1e-9:
             ticks.append(round(t, 10))
-        t += step
     return ticks
 
 
@@ -49,7 +52,11 @@ def svg(title: str, chain: list[float], series: dict[str, list[float | None]], v
     zlo, zhi = min(vals), max(vals)
     pad = max((zhi - zlo) * 0.08, 0.1)
     zlo, zhi = zlo - pad, zhi + pad
-    c0, c1 = chain[0], chain[-1] or 1.0
+    if not chain:
+        raise SurveyError("the profile has no samples")
+    c0, c1 = chain[0], chain[-1]
+    if not c1 - c0 > 0:  # a single sample or a zero-length line
+        c1 = c0 + 1.0
 
     def px(c: float) -> float:
         return ml + (c - c0) / (c1 - c0) * pw
@@ -143,7 +150,8 @@ def profile(
         report = ProfileReport(
             line=name, length_m=round(pts[-1][0], 3), step_m=step, samples=len(pts), surfaces=available
         )
-        job.sidecar.profiles.append(report)
+        # one profile.csv/profile.svg per job: the sidecar describes the files on disk, so a re-run replaces it
+        job.sidecar.profiles = [report]
         job.add_product("profile", "profile.csv", step=STEP, description=f"Profile along {name} (CSV)")
         job.add_product("profile_svg", "profile.svg", step=STEP, description=f"Profile along {name} (SVG)")
     return report

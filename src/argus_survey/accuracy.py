@@ -19,6 +19,10 @@ that edition's):
 - §7.16 statistics: min, max, mean, median, std, RMSE. §7.2: mean error should be < 25 % of
   the target RMSE (else investigate); a residual beyond 3 × the target RMSE is a blunder.
   Blunders are listed, never dropped (§C.9: "> 3σ" alone is no reason to discard a point).
+  With no target (a VVA, which is reported as found, or an NVA without ``--class-cm``) each
+  residual is screened against 3 × the RMSE of the group's *other* residuals (leave-one-out):
+  a group's own RMSE includes the point under test, so it masks a gross error and, for n ≤ 9,
+  can never be exceeded 3-fold (max |e| ≤ √n · RMSE). Fewer than 3 points are not screened.
 - The surface is sampled bilinearly. §C.11 recommends the containing pixel unless the data
   user agrees otherwise; the method is stated in the report either way.
 - Horizontal accuracy (RMSE_H) is not tested. Fine for LiDAR (§7.6), but §7.6 asks for it
@@ -57,6 +61,7 @@ STANDARD = "ASPRS Positional Accuracy Standards for Digital Geospatial Data, Edi
 MIN_CHECKS = 30
 BIAS_FRACTION = 0.25  # §7.2: mean error should be below 25 % of the target RMSE
 BLUNDER_FACTOR = 3.0  # §7.2: beyond 3 × the target RMSE is a blunder
+LOO_MIN = 3  # leave-one-out blunder screening needs at least two other residuals
 
 VVA_WORDS = ("veg", "vva")
 
@@ -64,26 +69,33 @@ VVA_WORDS = ("veg", "vva")
 def read_checks(path: Path, cols: tuple[str, str, str, str], desc_col: str = "description") -> list[dict[str, str]]:
     id_c, x_c, y_c, z_c = cols
     with path.open(newline="", encoding="utf-8-sig") as fh:
-        rows = list(csv.DictReader(fh))
+        rows = list(csv.DictReader(fh))  # a short row's missing fields are None
     if not rows:
         raise SurveyError(f"{path.name} has no rows")
     missing = [c for c in cols if c not in rows[0]]
     if missing:
         raise SurveyError(f"{path.name} lacks column(s) {', '.join(missing)} (have: {', '.join(rows[0])}); see --cols")
     out = []
-    for r in rows:
+    for row_no, r in enumerate(rows, start=2):  # row 1 is the header
+        if any(r[c] is None for c in cols):
+            raise SurveyError(
+                f"{path.name}: row {row_no} is short (missing {', '.join(c for c in cols if r[c] is None)})"
+            )
         try:
-            out.append(
-                {
-                    "id": r[id_c].strip(),
-                    "x": float(r[x_c]),
-                    "y": float(r[y_c]),
-                    "z": float(r[z_c]),
-                    "description": (r.get(desc_col) or "").strip(),
-                }
-            )  # type: ignore[dict-item]
+            xyz = [float(r[c]) for c in (x_c, y_c, z_c)]
         except ValueError as exc:
-            raise SurveyError(f"{path.name}: bad number in row {r}") from exc
+            raise SurveyError(f"{path.name}: bad number in row {row_no}: {dict(r)}") from exc
+        if not all(math.isfinite(v) for v in xyz):
+            raise SurveyError(f"{path.name}: non-finite coordinate in row {row_no}: {dict(r)}")
+        out.append(
+            {
+                "id": r[id_c].strip(),
+                "x": xyz[0],
+                "y": xyz[1],
+                "z": xyz[2],
+                "description": (r.get(desc_col) or "").strip(),
+            }
+        )  # type: ignore[dict-item]
     ids = [r["id"] for r in out]
     if len(set(ids)) != len(ids):
         raise SurveyError(f"{path.name}: check point ids are not unique")
@@ -119,10 +131,7 @@ def group_stats(
     std = math.sqrt(sum((e - mean) ** 2 for e in used) / (n - 1)) if n > 1 else None
     rmse = math.sqrt(sum(e * e for e in used) / n)
     product = math.sqrt(rmse * rmse + checkpoint_rmse * checkpoint_rmse) if checkpoint_rmse is not None else rmse
-    # the class is an NVA target; a VVA has none (reported as found), so it is judged by its own RMSE
-    target = target_class_cm / 100 if target_class_cm is not None and group == "NVA" else rmse
-    limit = BLUNDER_FACTOR * target
-    blunders = [i for i, e in mine if limit > 0 and abs(e) > limit]
+    blunders = blunder_ids(mine, target_class_cm / 100 if target_class_cm is not None and group == "NVA" else None)
     return AccuracyGroup(
         group=group,  # type: ignore[arg-type]
         n=n,
@@ -141,6 +150,32 @@ def group_stats(
     )
 
 
+def blunder_ids(residuals: list[tuple[str, float]], target_m: float | None) -> list[str]:
+    """Ids of residuals beyond 3 × *target_m* (§7.2) or, with no target, 3 × the leave-one-out RMSE.
+
+    The class is an NVA target; a VVA has none (reported as found). Without one, each residual is tested
+    against the RMSE of the *other* residuals, so a gross error cannot inflate its own threshold.
+    """
+    if target_m is not None:
+        limit = BLUNDER_FACTOR * target_m
+        return [i for i, e in residuals if limit > 0 and abs(e) > limit]
+    n = len(residuals)
+    if n < LOO_MIN:
+        return []
+    total = sum(e * e for _, e in residuals)
+    out = []
+    for i, e in residuals:
+        limit = BLUNDER_FACTOR * math.sqrt(max(total - e * e, 0.0) / (n - 1))
+        if limit > 0 and abs(e) > limit:
+            out.append(i)
+    return out
+
+
+def meets_class(rmse_m: float, target_class_cm: float) -> bool:
+    """NVA pass/fail, judged on the RMSE as printed (cm to 0.1), so a statement never contradicts itself."""
+    return round(100 * rmse_m, 1) <= target_class_cm
+
+
 def statement_for(g: AccuracyGroup, target_class_cm: float | None, *, nva_meets: bool | None = None) -> str:
     """§7.16.1's wording for one tested group (NVA or VVA).
 
@@ -151,7 +186,7 @@ def statement_for(g: AccuracyGroup, target_class_cm: float | None, *, nva_meets:
     found = f"{100 * g.rmse_m:.1f} (cm)"
     name = "Non-Vegetated Vertical Accuracy (NVA)" if g.group == "NVA" else "Vegetated Vertical Accuracy (VVA)"
     area = f"{g.group} tested area"
-    fails = g.group == "NVA" and target_class_cm is not None and 100 * g.rmse_m > target_class_cm
+    fails = g.group == "NVA" and target_class_cm is not None and not meets_class(g.rmse_m, target_class_cm)
     if not g.meets_minimum_count:
         produced = (
             f"This data set was produced to meet a {target_class_cm:g} (cm) RMSEV Vertical Positional Accuracy Class. "
@@ -208,8 +243,12 @@ def transform_points(
     moved: list[tuple[float, float, float]] = []
     for line in out.splitlines():
         parts = line.split()
-        if len(parts) >= 3:
+        if not parts or parts[0].startswith("#"):  # cct reports a failed point as "# Record n TRANSFORMATION ERROR"
+            continue
+        try:
             moved.append((float(parts[0]), float(parts[1]), float(parts[2])))
+        except (ValueError, IndexError):
+            continue  # not a coordinate line; the count check below refuses the result
     if len(moved) != len(coords) or not all(math.isfinite(v) for p in moved for v in p):
         raise SurveyError("transforming the check points failed (outside the transformation's area or grid)")
     return moved, op
@@ -270,7 +309,7 @@ def accuracy(
             and nva.rmse_m is not None
             and nva.meets_minimum_count  # a reduced-checkpoint NVA can't carry a "tested to meet" VVA
             and target_class_cm is not None
-            and 100 * nva.rmse_m <= target_class_cm
+            and meets_class(nva.rmse_m, target_class_cm)
         )
         for g in (nva, vva):
             if g is not None and g.rmse_m is not None:
@@ -285,11 +324,13 @@ def accuracy(
                 )
             if g.excluded:
                 notes.append(f"{g.group}: {g.excluded} check point(s) excluded (outside the surface or in a void)")
+            if g.n and g.n < LOO_MIN and not (target_class_cm is not None and g.group == "NVA"):
+                notes.append(f"{g.group}: too few check points to screen for blunders (needs {LOO_MIN})")
             if g.blunders:
                 basis = (
                     f"the {target_class_cm:g}-cm target RMSE"
                     if target_class_cm is not None and g.group == "NVA"
-                    else "the data RMSE"
+                    else "the RMSE of the group's other residuals (leave-one-out)"
                 )
                 notes.append(
                     f"{g.group}: {len(g.blunders)} residual(s) beyond 3 × {basis} ({', '.join(g.blunders[:10])}) — "

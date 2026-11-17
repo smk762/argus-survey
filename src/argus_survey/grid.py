@@ -16,20 +16,38 @@ _EPS = 1e-9
 
 
 def snap(bounds: Bounds3D | tuple[float, float, float, float], res: float) -> GridSpec:
-    """The smallest snapped grid at *res* that contains *bounds* (a point on the max edge gets its own cell)."""
+    """The smallest snapped grid at *res* that contains *bounds* (a point on the max edge gets its own cell).
+
+    The origin is never greater than the minimum: *_EPS* absorbs float noise when the minimum sits
+    on a grid line (``0.3 / 0.1 == 2.9999999999999996``), but a minimum genuinely just below a line
+    gets the cell below it. Either way the origin is a multiple of *res*, so epochs share cells.
+    """
     if res <= 0 or not math.isfinite(res):
         raise SurveyError(f"resolution must be a positive number of metres, got {res}")
     if isinstance(bounds, Bounds3D):
         minx, miny, maxx, maxy = bounds.minx, bounds.miny, bounds.maxx, bounds.maxy
     else:
         minx, miny, maxx, maxy = bounds
-    ox = math.floor(minx / res + _EPS) * res
-    oy = math.floor(miny / res + _EPS) * res
-    width = math.floor((maxx - ox) / res + _EPS) + 1
-    height = math.floor((maxy - oy) / res + _EPS) + 1
+    if not all(math.isfinite(v) for v in (minx, miny, maxx, maxy)) or maxx < minx or maxy < miny:
+        raise SurveyError(
+            f"cannot grid the bounds ({minx}, {miny}) - ({maxx}, {maxy}): the input has no points or degenerate bounds"
+        )
     # round the origin to the resolution's decimal precision so 0.1-m grids don't drift by 1e-12
     digits = max(0, -math.floor(math.log10(res)) + 6)
-    return GridSpec(origin_x=round(ox, digits), origin_y=round(oy, digits), res=res, width=width, height=height)
+    ox = _origin(minx, res, digits)
+    oy = _origin(miny, res, digits)
+    width = math.floor((maxx - ox) / res + _EPS) + 1
+    height = math.floor((maxy - oy) / res + _EPS) + 1
+    return GridSpec(origin_x=ox, origin_y=oy, res=res, width=width, height=height)
+
+
+def _origin(lo: float, res: float, digits: int) -> float:
+    """The snapped origin at or below *lo*."""
+    k = math.floor(lo / res + _EPS)
+    origin = round(k * res, digits)
+    if origin > lo:  # _EPS (or the rounding) lifted it past a minimum that is not on the grid line
+        origin = round((k - 1) * res, digits)
+    return origin
 
 
 def same_grid(a: GridSpec, b: GridSpec, tol: float = 1e-6) -> bool:
@@ -44,12 +62,13 @@ def same_grid(a: GridSpec, b: GridSpec, tol: float = 1e-6) -> bool:
 
 
 def aligned(a: GridSpec, b: GridSpec, tol: float = 1e-6) -> bool:
-    """Same resolution and cell boundaries (extents may differ)."""
+    """Same resolution and cell boundaries (extents may differ), both to within *tol* ground units."""
     if abs(a.res - b.res) >= tol:
         return False
     dx = (a.origin_x - b.origin_x) / a.res
     dy = (a.origin_y - b.origin_y) / a.res
-    return abs(dx - round(dx)) < 1e-6 and abs(dy - round(dy)) < 1e-6
+    # the origins' offset from a whole number of cells, in ground units (as same_grid compares)
+    return abs(dx - round(dx)) * a.res < tol and abs(dy - round(dy)) * a.res < tol
 
 
 def writer_options(grid: GridSpec) -> dict[str, float | int]:

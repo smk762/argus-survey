@@ -11,6 +11,10 @@ deliverables and never feed a computation. Raster views are coloured with a fixe
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +48,18 @@ def _cache(job: Job, kind: str, suffix: str) -> tuple[Path, Path]:
     return web / f"{kind}.{product.sha256[:16]}.v{VIEW_VERSION}{suffix}", job.path(product.path)
 
 
+def web_size(width: int, height: int, max_px: int = WEB_MAX_PX) -> list[str]:
+    """``gdalwarp -ts`` arguments capping the longer side at *max_px* (none when the raster is already smaller)."""
+    if max(width, height) <= max_px:
+        return []
+    return ["-ts", str(max_px), "0"] if width >= height else ["-ts", "0", str(max_px)]
+
+
+def _publish(tmp: Path, final: Path) -> None:
+    """Move a finished file into the cache atomically, so a reader never sees half of it."""
+    os.replace(tmp, final)
+
+
 def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
     """PNG path + the four lon/lat corners MapLibre's image source wants (TL, TR, BR, BL)."""
     if kind not in RASTER_KINDS:
@@ -52,8 +68,8 @@ def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
     meta_path = png.with_suffix(".json")
     if png.is_file() and meta_path.is_file():
         return json.loads(meta_path.read_text())
-    work = png.with_suffix(".tmp")
-    work.mkdir(exist_ok=True)
+    # scratch unique to this call: two requests for one view must not share (or delete) each other's files
+    work = Path(tempfile.mkdtemp(prefix=f".{kind}-", dir=png.parent))
     try:
         coloured = src
         value_range: list[float] | None = None
@@ -74,27 +90,20 @@ def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
             table.write_text("".join(f"{v!r} {r} {g} {b} {a}\n" for v, (r, g, b, a) in ramp) + "nv 0 0 0 0\n")
             coloured = work / "c.tif"
             run(["gdaldem", "color-relief", "-q", "-alpha", str(src), str(table), str(coloured)], step="web", sink=None)
+        width, height = rasters.info(src, sink=None, step="web")["size"]
         merc = work / "m.tif"
         run(
             [
-                "gdalwarp",
-                "-q",
-                "-overwrite",
-                "-t_srs",
-                "EPSG:3857",
-                "-r",
-                "bilinear",
-                "-dstalpha",
-                "-ts",
-                str(WEB_MAX_PX),
-                "0",
+                *("gdalwarp", "-q", "-overwrite", "-t_srs", "EPSG:3857", "-r", "bilinear", "-dstalpha"),
+                *web_size(width, height),
                 str(coloured),
                 str(merc),
             ],
             step="web",
             sink=None,
         )
-        run(["gdal_translate", "-q", "-of", "PNG", str(merc), str(png)], step="web", sink=None)
+        png_tmp = work / "view.png"
+        run(["gdal_translate", "-q", "-of", "PNG", str(merc), str(png_tmp)], step="web", sink=None)
         info = run_json(["gdalinfo", "-json", str(merc)], step="web", sink=None)
         corners = info["wgs84Extent"]["coordinates"][0]  # ring: TL, BL, BR, TR, TL
         tl, bl, br, tr = corners[0], corners[1], corners[2], corners[3]
@@ -105,12 +114,13 @@ def raster_overlay(job: Job, kind: str) -> dict[str, Any]:
             "range": value_range,  # the values at the ramp's ends (None for hillshade)
             "ramp": ramp_name,
         }
-        meta_path.write_text(json.dumps(meta))
+        meta_tmp = work / "view.json"
+        meta_tmp.write_text(json.dumps(meta))
+        _publish(png_tmp, png)
+        _publish(meta_tmp, meta_path)  # last: its presence (with the PNG's) is what marks the view cached
         return meta
     finally:
-        for f in work.glob("*"):
-            f.unlink()
-        work.rmdir()
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def vector_wgs84(job: Job, kind: str) -> Path:
@@ -118,10 +128,17 @@ def vector_wgs84(job: Job, kind: str) -> Path:
     if kind not in VECTOR_KINDS:
         raise SurveyError(f"{kind!r} has no map view (one of {', '.join(VECTOR_KINDS)})")
     out, src = _cache(job, kind, ".4326.geojson")
-    if not out.is_file():
+    if out.is_file():
+        return out
+    # ogr2ogr writes a temp sibling unique to this call; only a finished file becomes the cached view
+    tmp = out.with_name(f".{out.stem}.{uuid.uuid4().hex}.geojson")
+    try:
         run(
-            ["ogr2ogr", "-f", "GeoJSON", "-t_srs", "EPSG:4326", "-lco", "RFC7946=YES", str(out), str(src)],
+            ["ogr2ogr", "-f", "GeoJSON", "-t_srs", "EPSG:4326", "-lco", "RFC7946=YES", str(tmp), str(src)],
             step="web",
             sink=None,
         )
+        _publish(tmp, out)
+    finally:
+        tmp.unlink(missing_ok=True)
     return out
