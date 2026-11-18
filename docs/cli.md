@@ -64,7 +64,7 @@ $ argus-survey info [OPTIONS] {path}
 
 **Arguments**:
 
-* `path`: LAS/LAZ/COPC/E57 file  [required]
+* `path <file>`: LAS/LAZ/COPC/E57 file  [required]
 
 **Options**:
 
@@ -83,7 +83,7 @@ $ argus-survey ingest [OPTIONS] {inputs}...
 
 **Arguments**:
 
-* `inputs...`: LAS/LAZ/COPC/E57 files or directories of them  [required]
+* `inputs... <list[Path]>`: LAS/LAZ/COPC/E57 files or directories of them  [required]
 
 **Options**:
 
@@ -110,7 +110,7 @@ $ argus-survey synth [OPTIONS] {out}
 
 **Arguments**:
 
-* `out`: Output .las/.laz (with --kit: the directory to fill)  [required]
+* `out <path>`: Output .las/.laz (with --kit: the directory to fill)  [required]
 
 **Options**:
 
@@ -221,7 +221,7 @@ $ argus-survey run [OPTIONS] {inputs}...
 
 **Arguments**:
 
-* `inputs...`: LAS/LAZ/COPC/E57 files or directories  [required]
+* `inputs... <list[Path]>`: LAS/LAZ/COPC/E57 files or directories  [required]
 
 **Options**:
 
