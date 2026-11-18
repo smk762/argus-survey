@@ -90,3 +90,44 @@ jobs:
     # argus-ci suite rules: lint rules that each eliminate a finding class. New violations fail;
     # existing ones are in .suite-rules-baseline.json, which may only shrink.
     uses: smk762/argus-ci/.github/workflows/suite-rules.yml@v1
+
+  docs-check:
+    # argus-ci docs check: docs/cli.md matches the CLI, and README.md + docs/**/*.md (what PyPI and
+    # argus-sightline publish) carry no private IPs, home or server paths, or non-noreply emails.
+    uses: smk762/argus-ci/.github/workflows/docs-check.yml@v1
+    with:
+      cli-module: argus_survey.cli
+      cli-name: argus-survey
+    secrets:
+      denylist: ${{ secrets.DOCS_DENYLIST }}
+
+  branches:
+    # main is never ahead of dev. A PR into main is only the release PR from dev, and every commit
+    # pushed to main carries a tree dev already has: a fast-forward to a dev commit, or the release
+    # PR's merge commit (identical to the dev commit it merged).
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: main carries nothing dev lacks
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -eu
+          if [ "$EVENT" = pull_request ]; then
+            if [ "$HEAD_REF" != dev ]; then
+              echo "::error::PRs into main come only from dev (the release PR); this one is from ${HEAD_REF}"
+              exit 1
+            fi
+            exit 0
+          fi
+          git fetch -q origin dev
+          tree=$(git rev-parse 'HEAD^{tree}')
+          if ! git log --format=%T origin/dev | grep -qx "$tree"; then
+            echo "::error::main ($(git rev-parse --short HEAD)) has content dev lacks: git diff origin/dev $(git rev-parse --short HEAD)"
+            exit 1
+          fi
+          echo "main's tree is on dev."

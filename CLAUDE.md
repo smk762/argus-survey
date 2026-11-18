@@ -21,65 +21,62 @@ Not checked out? Read https://github.com/smk762/argus-cortex/blob/dev/SUITE.md
 ## Toolchain (read before touching Docker/CI)
 
 - **PDAL, GDAL and PROJ come from conda-forge**, pinned by `env/geo-linux-64.lock` (explicit URLs + md5), generated from `env/geo.yml` by `make geo-lock`. PDAL is not packaged by Debian or Ubuntu (24.04 and 26.04 both lack it), so "apt install pdal" is not an option; one conda-forge stack also guarantees PDAL links the same GDAL/PROJ whose CLIs we call. The image is `ubuntu:26.04` + that env at `/opt/geo` + Ubuntu's Python 3.14 in `/opt/venv`.
-- **Never pip-install PDAL/GDAL/rasterio/laspy/pyproj.** The package only shells out to `pdal`, `gdal*`, `ogr2ogr`, `projinfo`. The unified `gdal` CLI (≥ 3.11) supplies `raster calc`, `raster zonal-stats`, `raster pixel-info -r bilinear` and `raster fill-nodata`, so no Python GDAL bindings are needed (the spec's `gdal_calc.py`/`gdallocationinfo` are replaced by these on purpose).
+- **No Python GIS bindings** (see the table): the package only shells out to `pdal`, `gdal*`, `ogr2ogr`, `projinfo`. The unified `gdal` CLI (≥ 3.11) supplies `raster calc`, `raster zonal-stats`, `raster pixel-info -r bilinear` and `raster fill-nodata`, so no Python GDAL bindings are needed (the spec's `gdal_calc.py`/`gdallocationinfo` are replaced by these on purpose).
 - **Datum grids** are fetched at image build from cdn.proj.org and verified against `env/proj-grids.sha256` (AUSGeoid2020, AUSGeoid09, GDA94→GDA2020 conformal+distortion, AGQG/AVWS, GEOID18). At run time `PROJ_NETWORK=OFF`, and `tools.run` forces it off for every child.
 - `argus-survey doctor --strict` runs as the last image build step, so an image without a working toolchain cannot be built.
 
+## Must never happen
+
+Each line names what enforces it. An **UNENFORCED** line is a known gap: rely on review, and close it with a check
+rather than more prose. When something slips through, add the missing check here and in code. Don't add a rule to
+remember. Tests marked `tools` run only in the image (`make test-docker`, CI `image-test`), and
+`test_rules::test_must_never_table_names_real_tests` fails when a test cited here no longer exists.
+
+| Never | Enforced by |
+|---|---|
+| A height step (surfaces, contours, volume, cutfill, change, accuracy, profile) without a vertical datum, or an assumed datum that isn't recorded and shown red | `test_jobs::test_height_steps_refuse_without_vertical`, `test_report::test_assumed_vertical_gets_a_red_banner` |
+| PROJ picking the transformation at run time: `filters.reprojection`, or a ballpark operation when a grid is missing | `test_crs_operations::test_select_refuses_when_only_grid_operations_lack_grids`, `::test_parse_optional_grid_marker_is_treated_as_required`, `test_rules::test_no_banned_pdal_stages` |
+| A grid fetched mid-job (`PROJ_NETWORK` on for a child process) | `test_tools::test_run_forces_proj_network_off` |
+| A PDAL run that exits 0 after points failed to reproject, accepted as success | `test_tools::test_fatal_stderr_turns_exit_zero_into_failure` (ingest passes `TRANSFORM_FATAL`) |
+| An external command not in `job.json` (failed, missing or timed-out ones included), or run outside `tools.run` | `test_tools::test_run_failure_is_recorded_and_raised_with_stderr_tail`, `::test_run_missing_tool_is_recorded`, `::test_run_timeout_is_recorded_with_stderr`; ruff `TID251` bans `subprocess`, `os.system`, `os.popen` and asyncio subprocesses outside `tools.py` |
+| A route that takes a filesystem path, an input outside `SURVEY_DATA_DIR`, or a job id outside `^[A-Za-z0-9][A-Za-z0-9._-]*$` | `test_server::test_path_fence`, `::test_ids_and_steps_validated`, `test_config::test_resolve_under_root_refuses_escape`, `::test_resolve_under_root_refuses_symlink_out`, `test_jobs::test_unsafe_ids` |
+| A POST accepted without `SURVEY_ALLOW_PROCESS` | `test_server::test_process_routes_403_when_read_only` |
+| A GET that changes `job.json` (map views are cached in `<job>/.web/`, never recorded) | `test_server::test_reads_never_change_the_sidecar` |
+| Two steps running on one job at once | `test_server::test_one_step_per_job_at_a_time` (409) |
+| An input written to | `compose.yaml` mounts `/data/in` `read_only: true`; `test_server::test_run_over_sse_then_read_products` (`tools`: a full run leaves the input's bytes and mtime unchanged) |
+| Tiles merged when their parts don't add up to the source's point count | `test_tiling_units::test_parts_that_miss_points_are_refused_before_the_merge`, `::test_cores_partition_the_padded_extent` |
+| Voids silently counted as zero volume | `test_volumes_analytic::test_voids_refused_unless_allowed` (`tools`) |
+| An accuracy statement with a 95 % figure (ASPRS ed. 2 is RMSE only) | `test_report::test_report_covers_every_step_and_product` (`tools`) |
+| JavaScript in `report.html` | `test_report::test_report_is_self_contained` (`tools`) |
+| PDAL, GDAL, rasterio, laspy, pyproj or fiona as Python packages | `test_rules::test_no_python_gis_bindings_in_the_lock`, `::test_no_pip_install_of_gis_bindings_in_the_image` |
+| `writers.copc` (it buffers the whole cloud; untwine builds the COPC) | `test_rules::test_no_banned_pdal_stages` |
+| A binary file committed under `tests/` | `test_rules::test_no_binary_files_under_tests` |
+| Private IPs, home or server paths, or non-noreply emails in `README.md` or `docs/` | CI `docs-check` (argus-ci `docs-check.yml`, hygiene job) |
+| A stale `docs/cli.md`, or a lost heading that argus-sightline links to | `test_docs::test_cli_reference_is_current`, `::test_linked_headings_exist`; CI `docs-check` |
+| A stale `schema/survey-wire.schema.json` | `test_wire::test_committed_schema_is_current` |
+| A tracked file left out of the Docker build context, or an image that doesn't report its tag | `test_dockerignore::*`; `release.yml` "The pushed image reports the tag at /health" |
+| A release tag without its `## [X.Y.Z]` CHANGELOG section | `release.yml` build job, before anything publishes |
+| Work on `main` that `dev` lacks, or a PR into `main` other than the release PR from `dev` | CI `branches` job |
+
 ## Layout
 
-`src/argus_survey/`:
+Module docstrings say what each file does. What they don't:
 
-- `models.py` — Pydantic v2 wire types. **`JobSidecar` (`job.json`) is the API contract.** `SURVEY_VERSION` is its schema version. The API request bodies, `HealthInfo` and the SSE event payloads live here too; `WIRE_MODELS` → `schema/survey-wire.schema.json` (`argus-survey schema`; `tests/test_wire.py` fails when it is stale). [argus-sightline](../argus-sightline) generates its TypeScript types from that file, so a wire change means: regenerate, commit, then `npm run wire:local ../argus-survey` (or `wire:pull` after a tag) there.
-- `config.py` — `SURVEY_*` env knobs, `process_allowed()`, `resolve_under_root()` (the API's path fence, ported from atlas).
-- `tools.py` — **the one subprocess runner** (`run`, `run_json`, `pdal_pipeline`), `versions()`, PROJ search paths/grid lookup, `doctor()`.
-- `crs.py` — `select_operation()`: explicit coordinate-operation choice (see gotchas); `record_from_projjson()` (compound/3D/BoundCRS/foot units → `CrsRecord`), `pdal_coord_op()` (axis-order compensation), `promote_3d()`, `require_metric()`, `lonlat_bbox()`.
-- `jobs.py` — `JobStore`, strict id charset, and `Job`: `sink` (runner → sidecar, persisted per command), `add_product` (SHA256), `step()` (timings), `require_crs(height=)` (rule 1's refusal).
-- `ingest.py` — `info_report`, `ingest`: pin inputs, resolve source CRS (`--s-srs`, `--assume-vertical EPSG:x|ellipsoidal`), resolve target (`--t-srs`; a 2D target keeps the source heights explicitly), select the operation, then per input a **streaming** PDAL pipeline (projpipeline → crop → stats → LAZ) and **untwine** → `points.copc.laz`; counts reconciled, LiDAR/photogrammetry detected from returns/RGB.
-- `synthetic.py` — seeded analytic scenes (tilted plane, cone stockpile πr²h/3, building, trees; truth in `UserData`) and check points; `argus-survey synth`. The test fixtures *and* the demo data. `write_kit` (`synth DIR --kit`) writes every input the UI's guided demo needs plus `kit-truth.json`. Stockpiles and change are measured on the **DSM**: ground filtering (correctly) removes a pile from the DTM, which then reads ~10 % low on the kit's cone.
-- `grid.py` — `snap()` (origin = floor(min/res)·res, so epochs share cells), `same_grid`/`aligned`, writers.gdal and `-te/-tr` options.
-- `rasters.py` — `gdalinfo -json` facts, exact `stats()` (with `GDAL_PAM_ENABLED=NO`), `read_values()` (ENVI raw → `array`, for modest rasters), `calc()` (`gdal raster calc`), `sample()` (`gdal raster pixel-info -r bilinear`, batch), `set_crs()`.
-- `tiling.py` — buffered tiles for non-streamable PDAL filters; cores are half-open so they partition the plane, and parts **must** add up to the source count before untwine merges them.
-- `qa.py` — streaming stats + hexbin boundary (edge sized from density) + count raster; density percentiles, gaps (25% of median by default), outliers counted per tile (3σ).
-- `ground.py` — per tile: reset classes → outliers (class 7) → SMRF/CSF ignoring 7; photogrammetry returns normalised 1-of-1 (recorded); ground density/spacing.
-- `surfaces.py` — DTM (IDW r=res·√2 of class 2), DSM (binned max; first returns for LiDAR), CHM (tiled hag_nn → binned max), void masks (1/0/255) and void % of coverage, optional fill re-masked to coverage, hillshade.
-- `contours.py` — gdal_contour → GPKG with `idx` (index contours) → GeoJSON.
-- `vectors.py` — polygons/lines into the job CRS (refuses a CRS-less file, or GeoJSON whose "WGS 84" extent is plainly projected), WKT rings/bbox, `densify`, `write_zones` (GPKG for zonal-stats).
-- `volume.py` — `difference_volumes` (the engine: one 6-band `gdal raster calc` + `gdal raster zonal-stats --pixels fractional`), `volume` (stockpile: plane / lowest-perimeter / surface base), `cutfill` (design vs surface; fill = design above), `check_raster_crs`, `align_raster` (exact copy if aligned, else refuse unless `--resample`).
-- `change.py` — DoD later − earlier on the overlap (aligned grids, same CRS), LoD given or 1.96·√(σ₁²+σ₂²), optional polygon; both sidecars pinned by SHA256.
-- `accuracy.py` — ASPRS ed. 2: RMSE only (no 95 %), ≥30 checks, product RMSE = √(data² + checkpoints²), NVA pass/fail vs `--class-cm`, VVA reported as found; check points transformed with `cct` through the selected operation.
-- `profile.py` — densified line → bilinear samples → CSV + pure-Python SVG (voids break the line).
-- `pipeline.py` — `run_all` (`argus-survey run`).
-- `report.py` — self-contained printable `report.html` (no JS; PNG thumbnails as data URIs; figures link to `#cmd-N`).
-- `overlays.py` — web views for the viewer (EPSG:3857 PNG + lon/lat corners; WGS 84 GeoJSON), cached in `<job>/.web/`, **not** recorded in the sidecar (a GET must not change `job.json`).
-- `server/app.py` — FastAPI :8107. `WriteGuard` refuses every POST unless `SURVEY_ALLOW_PROCESS`; steps run in a thread and stream SSE (`start`, `step`, `command`, `warning`, `done`|`error`) via `Job.listeners`; one step per job at a time (409). `server/static/viewer.html` is the viewer (`examples/viewer.html` links to it).
-- `cli.py` — Typer CLI.
+- **`models.py` is the wire contract.** `JobSidecar` (`job.json`) is the API contract and `SURVEY_VERSION` its schema version. A wire change means: `argus-survey schema`, commit, then `npm run wire:local ../argus-survey` (or `wire:pull` after a tag) in [argus-sightline](../argus-sightline), which generates its TypeScript types from the schema.
+- **`synthetic.py`** is both the test fixtures and the demo data (`synth DIR --kit` → `kit-truth.json`). Stockpiles and change are measured on the **DSM**: ground filtering correctly removes a pile from the DTM, which then reads ~10 % low on the kit's cone.
+- **`docs/`** is published: argus-sightline imports `README.md` and `docs/*.md` at `dev` HEAD and deep-links to headings (`src/lib/surveyDocs.ts`). Rename a heading only with a Sightline change. `docs/cli.md` is generated (`make docs`).
+- **`tests/`**: `conftest.py` marks tool-backed tests `tools`; they skip without the tools unless `SURVEY_TEST_REQUIRE_TOOLS=1`. `tests/data/` holds captured *text* tool output for the pure-Python parser tests.
 
-`docs/` — published: [argus-sightline](../argus-sightline) imports `README.md` and `docs/*.md` at `dev` HEAD and deep-links to headings (`src/lib/surveyDocs.ts`). `tests/test_docs.py` lists those anchors; rename a heading only with a Sightline change. `docs/cli.md` is generated. No private IPs, home paths or email addresses in published docs.
-
-`tests/` — `conftest.py` marks tool-backed tests `tools`; they skip without the tools unless `SURVEY_TEST_REQUIRE_TOOLS=1`. `tests/data/` holds captured *text* tool output for pure-Python parser tests (no binary fixtures, ever).
-
-## Commands
-
-```bash
-make install       # uv sync --locked --all-extras; `make lock` after changing dependencies
-make lint          # ruff 0.15.16 check + format --check
-make test          # host pytest: pure-Python tests run, tool tests SKIP (no PDAL on the host)
-make test-docker   # the full suite in the image against this checkout, tools required
-make image         # build the runtime image (doctor --strict inside)
-make geo-lock      # re-resolve env/geo-linux-64.lock after editing env/geo.yml
-make docs          # regenerate docs/cli.md from the Typer app (tests/test_docs.py fails when stale)
-```
-
-The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docker run` the image as root against the checkout (root-owned `__pycache__`); compose runs as `${UID}:${GID}`.
+`make help` lists the targets. The dev host has no PDAL/GDAL, so `make test` skips the tool tests and `make test-docker` is the real gate. Don't `docker run` the image as root against the checkout (root-owned `__pycache__`); compose runs as `${UID}:${GID}`.
 
 ## Conventions (non-negotiable)
 
-1. **No silent datums.** Every job records horizontal CRS, vertical CRS (or `null` + an explicit `vertical_assumed` reason), geoid model, epoch where relevant, and units. Without a vertical CRS, height-dependent steps (volumes, contours, accuracy) refuse unless `--assume-vertical EPSG:xxxx` is given, and the assumption is recorded and shown in red in the report.
+1. **No silent datums.** Every job records horizontal CRS, vertical CRS (or `null` + an explicit `vertical_assumed` reason), geoid model, epoch where relevant, and units. Without a vertical CRS, height-dependent steps refuse unless `--assume-vertical EPSG:xxxx` is given, and the assumption is recorded and shown in red in the report.
 2. **Record, don't assume.** Every PDAL pipeline JSON and every GDAL/PROJ argv goes into the sidecar in run order, with tool versions. Every input is pinned by SHA256 and size.
-3. **Paths from clients are names under a root.** The API resolves inputs under `SURVEY_DATA_DIR` (`resolve_under_root`); artifacts are addressed by `(job_id, kind)`; job ids match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. No route takes a filesystem path.
+3. **Paths from clients are names under a root.** The API resolves inputs under `SURVEY_DATA_DIR` (`resolve_under_root`); artifacts are addressed by `(job_id, kind)`.
 4. **Numbers come with their uncertainty.** A volume carries the surface resolution, each surface's void %, and the method. An accuracy statement says how many check points, how many fell outside coverage, and which standard/edition.
-5. **Never overwrite inputs.** Outputs go into the job dir; inputs are read-only (compose mounts `/data/in` read-only).
-6. **One subprocess runner.** All PDAL/GDAL/PROJ calls go through `tools.run` (logs, times, captures stderr, appends to the sidecar — failed commands too); a non-zero exit raises `ToolError` with the argv and stderr tail.
+5. **Never overwrite inputs.** Outputs go into the job dir.
+6. **One subprocess runner.** All PDAL/GDAL/PROJ calls go through `tools.run` (logs, times, captures stderr, appends to the sidecar); a non-zero exit raises `ToolError` with the argv and stderr tail.
 
 ## Gotchas
 
@@ -99,6 +96,6 @@ The dev host has no PDAL/GDAL; `make test-docker` is the real gate. Don't `docke
 - The `serve` container runs the package installed in the image: `docker compose up -d --build serve` after changing the viewer or server.
 - **Photogrammetry clouds** usually have `ReturnNumber = 0` and no classes: "first returns" selects nothing. Detect and record the source type; use all points for the DSM.
 - The conda lock includes an x86-64-v3 (AVX2) microarch marker; very old CPUs can't run the image.
-- **Branches:** `dev` is the default branch and takes feature PRs; branch from `origin/dev` and never push to `main` directly, which must never be ahead of `dev`. A release fast-forwards `main` to a `dev` commit that passed CI (`git push origin origin/dev:main`), then tags it. If `main` is protected, the release is a reviewed PR from `dev` into `main`; its merge commit stays on `main` alone, one commit ahead of `dev` with an identical tree. That is the one exception to the rule: leave it and don't merge `main` back into `dev`. Anything else on `main` that `dev` lacks is a mistake (`git diff origin/dev origin/main` must be empty), and once `main` carries such a commit, later releases are PRs too. Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a `## [X.Y.Z]` CHANGELOG heading: `release.yml` refuses a tag without one (before PyPI) and uses that section as the GitHub Release notes.
+- **Branches:** `dev` is the default branch and the base of every PR; never push to `main`. A release fast-forwards `main` to a CI-passed `dev` commit and tags it, or, once `main` carries a release merge commit (it does), is a PR from `dev` into `main` whose merge commit is the one thing `main` may hold that `dev` lacks (identical tree; don't merge it back). Tags `vX.Y.ZrcN` / `vX.Y.Z`, each with a `## [X.Y.Z]` CHANGELOG section, which becomes the GitHub Release notes.
 - Versioning is git-tag-derived (`hatch-vcs`); `_version.py` is generated. `structlog`, Pydantic v2, ruff line-length 120. Scaffolded from `argus-pkg-template`; CI is standalone (`.github/workflows/ci.yml`).
 - Publishing (GitHub repo, PyPI, GHCR) is the owner's (smk762) job — never do it from here. Ask before adding a pip dependency beyond pydantic/structlog/typer/rich/fastapi/uvicorn/argus-cortex, or any network fetch in the server.
