@@ -81,3 +81,49 @@ def test_untwine_success_replaces_the_output(tmp_path: Path, monkeypatch: pytest
     assert out.read_bytes() == b"new copc"
     assert calls[0][calls[0].index("-o") + 1].endswith(".copc.laz")  # untwine keys COPC output on the suffix
     assert sorted(p.name for p in tmp_path.iterdir()) == ["points.copc.laz"]
+
+
+def test_parts_that_miss_points_are_refused_before_the_merge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tiles must add up to the source's count; a short sum is refused and untwine never runs."""
+    from argus_survey.jobs import JobStore
+    from argus_survey.models import Bounds3D, SurveyError
+
+    job = JobStore(tmp_path).open("t", create=True)
+    plan = tiling.plan(
+        Bounds3D(minx=0, miny=0, minz=0, maxx=100, maxy=100, maxz=1), 1_000, buffer=5.0, target_points=300
+    )
+    assert len(plan.tiles) > 1
+
+    def fake_pipeline(stages, **_kw):  # type: ignore[no-untyped-def]
+        Path(stages[-1]["filename"]).write_bytes(b"")
+        return {}
+
+    merged: list[Path] = []
+    monkeypatch.setattr(tiling, "pdal_pipeline", fake_pipeline)
+    monkeypatch.setattr(tiling, "run_json", lambda *_a, **_kw: {"summary": {"num_points": 100}})
+    monkeypatch.setattr(tiling, "untwine", lambda parts, out, **_kw: merged.append(out))
+    expected = 100 * len(plan.tiles)
+
+    tiling.run_tiles(
+        job,
+        tmp_path / "src.copc.laz",
+        plan,
+        lambda _t: [],
+        step="ground",
+        out=tmp_path / "o.laz",
+        expected_count=expected,
+    )
+    assert merged == [tmp_path / "o.laz"]
+
+    with pytest.raises(SurveyError, match=f"tiles hold {expected} points but the source has {expected + 3}"):
+        tiling.run_tiles(
+            job,
+            tmp_path / "src.copc.laz",
+            plan,
+            lambda _t: [],
+            step="ground",
+            out=tmp_path / "o2.laz",
+            expected_count=expected + 3,
+        )
+    assert merged == [tmp_path / "o.laz"]  # no merge after the refusal
+    assert not job.path(".ground-parts").exists()

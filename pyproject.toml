@@ -71,5 +71,19 @@ line-length = 120
 extend-exclude = ["src/argus_survey/_version.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "TID251"]
 ignore = ["E501", "B008", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+# tools.py is the one subprocess runner (CLAUDE.md, must never happen); tests may call git and the CLI.
+"src/argus_survey/tools.py" = ["TID251"]
+"tests/**" = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"subprocess".msg = "Run tools through argus_survey.tools.run: it records the argv in job.json and forces PROJ_NETWORK=OFF"
+"os.system".msg = "Run tools through argus_survey.tools.run"
+"os.popen".msg = "Run tools through argus_survey.tools.run"
+"os.spawnv".msg = "Run tools through argus_survey.tools.run"
+"os.execv".msg = "Run tools through argus_survey.tools.run"
+"asyncio.create_subprocess_exec".msg = "Run tools through argus_survey.tools.run"
+"asyncio.create_subprocess_shell".msg = "Run tools through argus_survey.tools.run"
