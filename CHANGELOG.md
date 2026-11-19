@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
 ### Fixed (ai-code-auditor sweep: 73 findings fixed, 12 closed as not applicable)
 - **QA density and gaps:** a covered cell with no points became `-9999 / cell_area` (a large negative "density" at 0.5 m, silently dropped at 1 m), because `gdal raster calc` does not propagate nodata. Empty covered cells now count as zero-density gaps, so gap % can read higher than before, correctly.
 - **Accuracy:** blunder screening without a class target (every VVA, and an NVA without `--class-cm`) tests each residual against 3 × the RMSE of the group's *other* residuals (leave-one-out); with the group's own RMSE a blunder could never be flagged in a group of 9 or fewer. Groups under 3 points are not screened, and the report says so. NVA pass/fail is judged at the printed 0.1 cm, so 7.0 cm meets a 7 cm class. Check-point CSV errors name the row; short rows, non-finite coordinates and cct's per-point error lines raise a clear error.
