@@ -135,6 +135,10 @@ def select_operation(
     usable = [i for i, c in enumerate(candidates) if not c.missing_grids]
     if prefer is not None:
         matches = [i for i, c in enumerate(candidates) if prefer.lower() in c.name.lower()]
+        # an operation named in full is the user's pin: never swap it for another match when its grids are absent
+        exact = [i for i in matches if candidates[i].name.lower() == prefer.strip().lower()]
+        if exact:
+            matches = exact
         if not matches:
             names = "; ".join(c.name for c in candidates)
             raise SurveyError(f"no operation from {source} to {target} matches {prefer!r} (candidates: {names})")
@@ -260,7 +264,8 @@ def record_from_projjson(pj: dict[str, Any], *, definition: str | None = None, s
         else:  # PROJ and PDAL both accept PROJJSON as a CRS definition
             definition = json.dumps(wrapper if wrapper is not None else pj, separators=(",", ":"))
         if epoch is not None and definition.startswith("EPSG:"):
-            definition = f"{definition}@{epoch:g}"  # keep the epoch in what PROJ is given, not only in the record
+            # keep the epoch in what PROJ is given, not only in the record; repr, not :g, which keeps 6 digits
+            definition = f"{definition}@{epoch!r}"
     return CrsRecord(
         definition=definition,
         name=str(pj.get("name", horizontal.name)),
