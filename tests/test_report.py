@@ -52,9 +52,10 @@ def test_report_covers_every_step_and_product(full_job) -> None:  # type: ignore
         if kind != "report":
             assert p.sha256 in doc, kind
     n = len(full_job.sidecar.commands)
-    assert f'id="cmd-{n}"' in doc or f'id="cmd-{n - 1}"' in doc  # the log is complete up to the report itself
     links = set(re.findall(r'href="#cmd-(\d+)"', doc))
     anchors = set(re.findall(r'id="cmd-(\d+)"', doc))
+    # 1-based, and complete: the report's own thumbnail commands run before the log is written, nothing after
+    assert anchors == {str(i) for i in range(1, n + 1)}
     assert links and links <= anchors, "every figure links to a command that is in the log"
     # ASPRS ed. 2 dropped the 95 % confidence figure: no such claim anywhere (numbers like 41.96 are fine)
     assert not re.search(r"95\s?%\s*confidence|1\.96\s*[×x*·]\s*RMSE|NVA\s*\(?95", doc, re.IGNORECASE)

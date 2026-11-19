@@ -67,7 +67,9 @@ def test_ground_separates_objects(qa_job) -> None:  # type: ignore[no-untyped-de
     assert total == r.points
     assert r.ground_spacing < 0.5
     noise = class_counts_by_truth(copc, synthetic.TRUTH_NOISE)
-    assert noise.get("7", 0) >= 0.8 * sum(noise.values()), noise  # outliers marked class 7, not dropped
+    n_noise = sum(noise.values())
+    assert n_noise > 0, noise  # the injected outliers survive ground
+    assert noise.get("7", 0) >= 0.8 * n_noise, noise  # outliers marked class 7, not dropped
 
 
 def test_ground_unknown_param(ingested) -> None:  # type: ignore[no-untyped-def]
@@ -89,7 +91,12 @@ def test_tiled_ground_partition_is_exact(las_mga_ahd: Path, jobs_root: Path, mon
     ingest(job, [las_mga_ahd])
     r = ground(job, params={"window": 6.0})
     assert r.tiles > 4
-    bld = class_counts_by_truth(job.product_path("classified"), synthetic.TRUTH_BUILDING, min_height=0.6)
+    classified = job.product_path("classified")
+    # the written cloud holds exactly the source's points: an edge point duplicated or dropped changes the count
+    by_truth = [class_counts_by_truth(classified, t) for t in range(5)]
+    assert sum(sum(c.values()) for c in by_truth) == job.sidecar.ingest.output_count
+    assert sum(by_truth[synthetic.TRUTH_NOISE].values()) == synthetic.Scene().noise_points
+    bld = class_counts_by_truth(classified, synthetic.TRUTH_BUILDING, min_height=0.6)
     assert bld.get("2", 0) / sum(bld.values()) < 0.05
 
 

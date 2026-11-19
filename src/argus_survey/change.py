@@ -40,11 +40,10 @@ def overlap(a: GridSpec, b: GridSpec) -> GridSpec:
     ax0, ay0, ax1, ay1 = a.extent
     bx0, by0, bx1, by1 = b.extent
     x0, y0, x1, y1 = max(ax0, bx0), max(ay0, by0), min(ax1, bx1), min(ay1, by1)
-    if x1 <= x0 or y1 <= y0:
-        raise SurveyError("the two epochs do not overlap")
-    return GridSpec(
-        origin_x=x0, origin_y=y0, res=a.res, width=round((x1 - x0) / a.res), height=round((y1 - y0) / a.res)
-    )
+    width, height = round((x1 - x0) / a.res), round((y1 - y0) / a.res)
+    if width < 1 or height < 1:  # disjoint, touching along an edge, or less than a cell in common
+        raise SurveyError("the two epochs do not overlap (not even by one cell)")
+    return GridSpec(origin_x=x0, origin_y=y0, res=a.res, width=width, height=height)
 
 
 def _nva_rmse(job: Job) -> float | None:

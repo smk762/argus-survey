@@ -62,3 +62,22 @@ def test_select_refuses_when_only_grid_operations_lack_grids() -> None:
 def test_select_unknown_preference() -> None:
     with pytest.raises(SurveyError, match="matches"):
         crs.select_operation("EPSG:7843", "EPSG:7850+5711", prefer="no such op")
+
+
+def test_pinned_substring_takes_the_first_match_whose_grids_are_on_disk(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    text = "".join(
+        f"Operation No. {n}:\n\nunknown id, A to B ({n}), 0.05 m, World\n\nPROJ string:\n"
+        f"+proj=pipeline +step +proj=hgridshift +grids={grid}\n\n"
+        for n, grid in ((1, "absent.tif"), (2, "present.tif"))
+    )
+    monkeypatch.setattr(crs, "run", lambda *a, **k: SimpleNamespace(stdout=text))
+    monkeypatch.setattr(crs, "find_grid", lambda g: Path(g) if g == "present.tif" else None)
+    op = crs.select_operation("EPSG:1", "EPSG:2", prefer="a to b")  # matches both; the first lacks its grid
+    assert op.chosen_by == "user" and op.grids == ["present.tif"]
+    with pytest.raises(SurveyError, match="'A to B \\(1\\)' needs grid"):  # only an unusable match: refused
+        crs.select_operation("EPSG:1", "EPSG:2", prefer="(1)")
+    # an operation named in full is pinned: refused when its grid is absent, never swapped for another match
+    with pytest.raises(SurveyError, match="'A to B \\(1\\)' needs grid"):
+        crs.select_operation("EPSG:1", "EPSG:2", prefer="A to B (1)")

@@ -49,8 +49,12 @@ def test_process_routes_403_when_read_only(roots) -> None:  # type: ignore[no-un
 
 
 def test_inputs_lists_names_not_paths(roots) -> None:  # type: ignore[no-untyped-def]
+    data, _ = roots
+    (data / ".cache" / "deep").mkdir(parents=True)  # hidden dirs are pruned, not listed
+    (data / ".cache" / "deep" / "b.laz").write_bytes(b"x")
+    (data / "site" / "0.laz").write_bytes(b"x")
     body = client(roots, False).get("/inputs").json()
-    assert body["points"] == ["site/a.laz"] and body["vectors"] == ["pile.geojson"]
+    assert body["points"] == ["site/0.laz", "site/a.laz"] and body["vectors"] == ["pile.geojson"]
 
 
 @pytest.mark.parametrize("bad", ["../secret.laz", "/etc/passwd", "site/../../secret.laz"])
@@ -99,11 +103,70 @@ def test_viewer_is_served(roots) -> None:  # type: ignore[no-untyped-def]
     assert r.status_code == 200 and "<html" in r.text.lower()
 
 
+def test_reads_never_change_the_sidecar(roots) -> None:  # type: ignore[no-untyped-def]
+    """A GET serves or caches (map views go to .web/), but job.json is a record: reading it must not rewrite it."""
+    from argus_survey.jobs import JobStore
+
+    job = JobStore(roots[1]).open("j1", create=True)
+    job.path("qa.json").write_text("{}", encoding="utf-8")
+    job.add_product("qa", "qa.json", step="qa")
+    sidecar = job.path("job.json")
+    before, mtime = sidecar.read_bytes(), sidecar.stat().st_mtime_ns
+    c = client(roots, True)
+    for url in [
+        "/health",
+        "/inputs",
+        "/jobs",
+        "/jobs/j1",
+        "/jobs/j1/qa",
+        "/jobs/j1/missing",
+        "/jobs/j1/web/qa",
+        "/jobs/j1/web/qa/image",
+        "/jobs/j1/web/dtm",
+    ]:
+        assert c.get(url).status_code < 500, url
+    assert c.get("/jobs/j1/qa", headers={"Range": "bytes=0-0"}).status_code == 206
+    assert sidecar.read_bytes() == before and sidecar.stat().st_mtime_ns == mtime
+
+
+def test_one_step_per_job_at_a_time(roots, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    import threading
+
+    from argus_survey import qa as qa_mod
+    from argus_survey.jobs import JobStore
+
+    JobStore(roots[1]).open("j1", create=True)
+    started, release = threading.Event(), threading.Event()
+
+    def slow_qa(job, **_kw):  # type: ignore[no-untyped-def]
+        started.set()
+        assert release.wait(10)
+        return {"ok": True}
+
+    monkeypatch.setattr(qa_mod, "qa", slow_qa)
+    c = client(roots, True)
+    first: list[str] = []
+    t = threading.Thread(target=lambda: first.append(c.post("/jobs/j1/qa", json={}).text))
+    t.start()
+    try:
+        assert started.wait(10)
+        busy = c.post("/jobs/j1/qa", json={})
+        assert busy.status_code == 409 and "already processing" in busy.json()["detail"]
+        assert c.post("/jobs/j2/ingest", json={"inputs": ["site/a.laz"]}).status_code == 200  # other jobs still run
+    finally:
+        release.set()
+        t.join(10)
+    assert sse(first[0])[-1][0] == "done"
+    assert c.post("/jobs/j1/qa", json={}).status_code == 200  # free again once the step ends
+
+
 @pytest.mark.tools
 def test_run_over_sse_then_read_products(tmp_path: Path) -> None:
     data, jobs = tmp_path / "in", tmp_path / "jobs"
     data.mkdir()
     synthetic.write_scene(synthetic.Scene(), data / "site.laz")
+    site = data / "site.laz"
+    pinned = (site.read_bytes(), site.stat().st_mtime_ns)
     c = TestClient(create_app(data_dir=data, jobs_dir=jobs, allow_process=True))
     events = sse(c.post("/jobs/demo/run", json={"inputs": ["site.laz"], "res": 1.0, "interval": 1.0}).text)
     kinds = [e for e, _ in events]
@@ -135,6 +198,9 @@ def test_run_over_sse_then_read_products(tmp_path: Path) -> None:
     assert c.get("/jobs/demo/profile_svg").status_code == 200
     # web views never touch the provenance log; the profile step does
     assert len(c.get("/jobs/demo").json()["commands"]) > n_commands
+    # inputs are never written to: the whole run and every read left the input as it was
+    assert (site.read_bytes(), site.stat().st_mtime_ns) == pinned
+    assert sorted(p.name for p in data.iterdir()) == ["site.laz"]
 
 
 @pytest.mark.tools

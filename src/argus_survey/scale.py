@@ -49,20 +49,43 @@ def horizontal_projjson(crs: CrsRecord, *, sink: CommandSink | None, step: str) 
     return pj
 
 
+def _metres(value: Any, what: str) -> float | None:
+    """A PROJJSON length (a bare number in metres, or ``{"value", "unit"}``) in metres."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return float(value)
+    unit = value.get("unit", "metre")
+    if unit == "metre":
+        factor = 1.0
+    elif isinstance(unit, dict) and isinstance(unit.get("conversion_factor"), int | float):
+        factor = float(unit["conversion_factor"])  # e.g. Clarke 1858 is defined in Clarke's feet
+    else:
+        raise SurveyError(f"can't read the unit of the {what} ({unit!r})")
+    return float(value["value"]) * factor
+
+
 def ellipsoid_of(projected: dict[str, Any]) -> tuple[float, float]:
-    """(semi-major axis, inverse flattening) of a projected CRS's base datum."""
+    """(semi-major axis in metres, inverse flattening) of a projected CRS's base datum; a sphere has rf = ∞."""
     base = projected["base_crs"]
     datum = base.get("datum") or base.get("datum_ensemble") or {}
     ell = datum.get("ellipsoid") or {}
-    a, b = (
-        v.get("value") if isinstance(v, dict) else v for v in (ell.get("semi_major_axis"), ell.get("semi_minor_axis"))
-    )
-    rf = ell.get("inverse_flattening")
-    if rf is None and a is not None and b is not None and float(a) > float(b):
-        rf = float(a) / (float(a) - float(b))  # ellipsoids defined by a and b (Clarke 1866, Airy 1830)
+    name = ell.get("name", base.get("name", "?"))
+    radius = _metres(ell.get("radius"), f"radius of {name}")
+    a = _metres(ell.get("semi_major_axis"), f"semi-major axis of {name}")
+    b = _metres(ell.get("semi_minor_axis"), f"semi-minor axis of {name}")
+    rf_raw = ell.get("inverse_flattening")
+    rf = float(rf_raw) if rf_raw is not None else None
+    if a is None and radius is not None:  # PROJJSON writes a sphere as {"radius": R}
+        return radius, math.inf
+    if rf is None and a is not None and b is not None:
+        # ellipsoids defined by a and b (Clarke 1866, Airy 1830); a == b is a sphere
+        rf = a / (a - b) if a > b else math.inf
+    if rf == 0:  # PROJ/WKT write a sphere's inverse flattening as 0
+        rf = math.inf
     if a is None or rf is None:
         raise SurveyError(f"can't read the ellipsoid of {base.get('name', '?')}")
-    return float(a), float(rf)
+    return a, rf
 
 
 def gaussian_radius(a: float, inverse_flattening: float, lat_deg: float) -> float:
@@ -86,6 +109,19 @@ def parse_proj_verbose(text: str) -> list[tuple[float, float, float]]:
     return list(zip(hs, ks, cs, strict=True))
 
 
+def parse_proj_inverse(text: str) -> list[tuple[float, float]]:
+    """``proj -I`` output → [(lon, lat)] per input line; a point proj can't invert (``*\t*``) is (nan, nan)."""
+    out: list[tuple[float, float]] = []
+    for parts in (ln.split() for ln in text.splitlines()):
+        if len(parts) < 2:
+            continue
+        try:
+            out.append((float(parts[0]), float(parts[1])))
+        except ValueError:
+            out.append((math.nan, math.nan))
+    return out
+
+
 def _proj_args(projected: dict[str, Any], *, sink: CommandSink | None, step: str) -> list[str]:
     out = run(["projinfo", "-o", "PROJ", "-q", json.dumps(projected)], step=step, sink=sink).stdout
     return [t for t in out.split() if t != "+type=crs"]
@@ -102,9 +138,15 @@ def scale_factors(
     inv = run(
         ["proj", "-I", "-f", "%.10f", *args], step=step, sink=sink, stdin="".join(f"{x!r} {y!r}\n" for x, y in pts)
     ).stdout
-    lonlat = [(float(p[0]), float(p[1])) for p in (ln.split() for ln in inv.splitlines()) if len(p) >= 2]
+    lonlat = parse_proj_inverse(inv)
     if len(lonlat) != len(pts):
         raise SurveyError("could not place the site on the ellipsoid (proj -I)")
+    for (x, y), (lo, la) in zip(pts, lonlat, strict=True):
+        if not (math.isfinite(lo) and math.isfinite(la)):
+            raise SurveyError(
+                f"could not place the site on the ellipsoid: proj -I can't invert ({x:.3f}, {y:.3f}) — is the extent "
+                f"outside the projection's domain, or is the CRS ({crs.name}) wrong?"
+            )
     verbose = run(
         ["proj", "-V", *args], step=step, sink=sink, stdin="".join(f"{lo!r} {la!r}\n" for lo, la in lonlat)
     ).stdout
@@ -127,12 +169,8 @@ def scale_factors(
             raise SurveyError("the base geographic CRS has no EPSG code; can't find the ellipsoidal height")
         geo3d = crs_mod.promote_3d(f"EPSG:{base['code']}", sink=sink, step=step)
         target = crs_mod.describe(geo3d, sink=sink, step=step)
-        bbox = (
-            min(p[0] for p in lonlat),
-            min(p[1] for p in lonlat),
-            max(p[0] for p in lonlat),
-            max(p[1] for p in lonlat),
-        )
+        west, east = crs_mod.lon_extent([p[0] for p in lonlat])
+        bbox = (west, min(p[1] for p in lonlat), east, max(p[1] for p in lonlat))
         op = crs_mod.select_operation(crs.definition, geo3d, bbox_lonlat=bbox, sink=sink, step=step)
         pipeline = crs_mod.pdal_coord_op(op, crs, target)
         out = run(["cct", "-d", "4", *pipeline.split()], step=step, sink=sink, stdin=f"{cx!r} {cy!r} {mean_height!r}\n")

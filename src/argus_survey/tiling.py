@@ -26,7 +26,7 @@ from typing import Any
 
 from argus_survey.jobs import Job
 from argus_survey.models import Bounds3D, SurveyError
-from argus_survey.tools import pdal_pipeline, run, run_json
+from argus_survey.tools import CommandSink, pdal_pipeline, run, run_json
 
 TARGET_POINTS = 8_000_000
 MIN_TILE = 50.0  # metres; smaller tiles mean more buffer overhead than they save
@@ -125,6 +125,26 @@ def plan(bounds: Bounds3D, count: int, *, buffer: float, target_points: int | No
     return TilePlan(tiles=tiles, size=size, buffer=buffer)
 
 
+def untwine(parts: Path, out: Path, *, temp_dir: Path, step: str, sink: CommandSink | None) -> None:
+    """Merge the LAS/LAZ files in *parts* into the COPC *out*, all or nothing.
+
+    untwine writes a hidden sibling of *out* (same ``.copc.laz`` suffix) that replaces *out* only on
+    success, so a failed or interrupted merge neither destroys the previous output nor leaves a
+    truncated file at its path. Its scratch *temp_dir* is removed either way.
+    """
+    partial = out.with_name(f".partial-{out.name}")
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    partial.unlink(missing_ok=True)
+    try:
+        run(["untwine", "-i", str(parts), "-o", str(partial), "--temp_dir", str(temp_dir)], step=step, sink=sink)
+        if not partial.is_file():
+            raise SurveyError(f"{step}: untwine exited 0 but wrote no {partial.name}")
+        os.replace(partial, out)
+    finally:
+        partial.unlink(missing_ok=True)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 MiddleStages = Callable[[Tile], list[dict[str, Any]]]
 
 
@@ -181,11 +201,7 @@ def run_tiles(
             if total != expected_count:
                 raise SurveyError(f"{step}: tiles hold {total} points but the source has {expected_count}")
         if out is not None:
-            out.unlink(missing_ok=True)
-            tmp = job.path(f".{step}-untwine")
-            shutil.rmtree(tmp, ignore_errors=True)
-            run(["untwine", "-i", str(parts_dir), "-o", str(out), "--temp_dir", str(tmp)], step=step, sink=job.sink)
-            shutil.rmtree(tmp, ignore_errors=True)
+            untwine(parts_dir, out, temp_dir=job.path(f".{step}-untwine"), step=step, sink=job.sink)
     except BaseException:
         shutil.rmtree(parts_dir, ignore_errors=True)
         raise

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import math
 import random
+import subprocess
 
 import pytest
 
-from argus_survey.accuracy import group_of, group_stats, statement_for
+from argus_survey import accuracy
+from argus_survey.accuracy import group_of, group_stats, read_checks, statement_for
+from argus_survey.change import overlap
 from argus_survey.models import CheckResidual, GridSpec, SurveyError
 from argus_survey.profile import nice_ticks, svg
 from argus_survey.vectors import densify, wkt_bbox, wkt_rings
@@ -98,7 +101,7 @@ def test_group_stats_section_7_16_figures_and_blunders() -> None:
     assert g.n == 31 and g.meets_minimum_count
     assert (g.min_m, g.max_m, g.median_m) == (-0.02, 0.4, 0.0)
     assert g.blunders == ["p30"]  # > 3 × 10 cm (§7.2)
-    # without a class the data RMSE is the yardstick (§C.2)
+    # without a class each residual is screened against the RMSE of the others (leave-one-out)
     assert group_stats(_rows(res), "NVA", None).blunders == ["p30"]
 
 
@@ -131,10 +134,88 @@ def test_statements_follow_section_7_16_1() -> None:
 
 
 def test_vva_blunders_use_their_own_rmse_not_the_nva_class() -> None:
-    # 8 cm residuals are "beyond 3 × 2 cm" for an NVA class, but a VVA has no target: only its own RMSE counts
+    # 8 cm residuals are "beyond 3 × 2 cm" for an NVA class, but a VVA has no target, so its own residuals set the bar
     res = [0.08, -0.08] * 15
     assert group_stats(_rows(res, "VVA"), "VVA", None, target_class_cm=2).blunders == []
     assert len(group_stats(_rows(res), "NVA", None, target_class_cm=2).blunders) == 30
+
+
+def test_blunders_without_a_class_are_screened_leave_one_out() -> None:
+    # the group's own RMSE (2.89 m here) would hide a 5 m error: max |e| <= sqrt(n) * RMSE
+    assert group_stats(_rows([0.01, 0.01, 5.0], "VVA"), "VVA", None).blunders == ["p2"]
+    assert group_stats(_rows([0.01, -0.02, 0.015, 5.0]), "NVA", None).blunders == ["p3"]
+    assert group_stats(_rows([0.01, 5.0], "VVA"), "VVA", None).blunders == []  # too few to screen
+
+
+def test_nva_pass_fail_matches_the_printed_rmse() -> None:
+    at_limit = group_stats(_rows([0.07, -0.07] * 15), "NVA", None)  # 100 * 0.07 == 7.000000000000001
+    s = statement_for(at_limit, 7)
+    assert "RMSEV = 7.0 (cm)" in s and "does NOT meet" not in s
+    assert accuracy.meets_class(0.0704, 7) and not accuracy.meets_class(0.0706, 7)
+
+
+def _csv(tmp_path, text: str):
+    p = tmp_path / "checks.csv"
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def test_read_checks_refuses_bad_rows(tmp_path) -> None:
+    cols = ("id", "x", "y", "z")
+    ok = read_checks(_csv(tmp_path, "id,x,y,z\np1,1,2,3\n"), cols)
+    assert ok == [{"id": "p1", "x": 1.0, "y": 2.0, "z": 3.0, "description": ""}]
+    with pytest.raises(SurveyError, match="row 3 is short"):
+        read_checks(_csv(tmp_path, "id,x,y,z\np1,1,2,3\np2,1,2\n"), cols)
+    for bad in ("nan", "inf", "-inf"):
+        with pytest.raises(SurveyError, match="non-finite coordinate in row 2"):
+            read_checks(_csv(tmp_path, f"id,x,y,z\np1,1,2,{bad}\n"), cols)
+    with pytest.raises(SurveyError, match="bad number in row 2"):
+        read_checks(_csv(tmp_path, "id,x,y,z\np1,1,two,3\n"), cols)
+    with pytest.raises(SurveyError, match="not unique"):
+        read_checks(_csv(tmp_path, "id,x,y,z\np1,1,2,3\np1,4,5,6\n"), cols)
+
+
+def test_cct_error_lines_refused_as_survey_error(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from argus_survey import crs as crs_mod
+
+    src = SimpleNamespace(has_height_datum=True, definition="EPSG:7844+5711")
+    job = SimpleNamespace(sidecar=SimpleNamespace(crs=SimpleNamespace(definition="EPSG:7850+5711")), sink=None)
+    monkeypatch.setattr(crs_mod, "describe", lambda *a, **k: src)
+    monkeypatch.setattr(crs_mod, "same_crs", lambda a, b: False)
+    monkeypatch.setattr(crs_mod, "lonlat_bbox", lambda *a, **k: (0, 0, 1, 1))
+    monkeypatch.setattr(crs_mod, "select_operation", lambda *a, **k: "op")
+    monkeypatch.setattr(crs_mod, "pdal_coord_op", lambda *a, **k: "+proj=noop")
+    out = "400000.0 6400000.0 10.0 0\n# Record 1 TRANSFORMATION ERROR: 200 9 9 (Point outside of projection domain)\n"
+    monkeypatch.setattr(accuracy, "run", lambda *a, **k: subprocess.CompletedProcess([], 0, stdout=out, stderr=""))
+    pts = [{"x": "1", "y": "2", "z": "3"}, {"x": "200", "y": "9", "z": "9"}]
+    with pytest.raises(SurveyError, match="outside the transformation's area or grid"):
+        accuracy.transform_points(job, pts, "EPSG:7844+5711")  # type: ignore[arg-type]
+
+
+def test_change_overlap_needs_a_whole_cell() -> None:
+    a = GridSpec(origin_x=0, origin_y=0, res=1, width=10, height=10)
+    assert overlap(a, GridSpec(origin_x=5, origin_y=5, res=1, width=10, height=10)).width == 5
+    with pytest.raises(SurveyError, match="do not overlap"):
+        overlap(a, GridSpec(origin_x=10, origin_y=0, res=1, width=10, height=10))  # shares an edge only
+    with pytest.raises(SurveyError, match="do not overlap"):
+        overlap(a, GridSpec(origin_x=9.6, origin_y=0, res=1, width=10, height=10))  # 0.4 of a cell
+
+
+def test_nice_ticks_degenerate_ranges() -> None:
+    assert nice_ticks(float("nan"), 1) == [] and nice_ticks(0, float("inf")) == []
+    t = nice_ticks(100.0, 100.00000000000001)  # used to loop forever: step below the float spacing
+    assert t and len(t) == len(set(t)) <= 62
+    t = nice_ticks(5e6, 5e6 + 1e-10)
+    assert t and len(t) == len(set(t))
+    assert nice_ticks(3, 3) == nice_ticks(3, 4)
+
+
+def test_svg_degenerate_chainage() -> None:
+    assert "vertical exaggeration" in svg("t", [5.0], {"dtm": [1.0]}, "Height")  # c0 == c1 != 0
+    with pytest.raises(SurveyError):
+        svg("t", [], {"dtm": [1.0]}, "Height")
 
 
 def test_ground_filter_params_refused_without_a_job() -> None:

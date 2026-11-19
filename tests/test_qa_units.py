@@ -20,3 +20,33 @@ def test_ground_only_delivery() -> None:
     assert not ground_only(_cls({"7": 5}))
     assert not ground_only(_cls({"2": 0, "1": 4}))
     assert not ground_only(None)
+
+
+def test_hexbin_edge_of_an_empty_cloud() -> None:
+    from argus_survey.qa import hexbin_edge
+
+    assert hexbin_edge(0, 100.0) > 0
+    assert hexbin_edge(1000, 0.0) > 0
+    assert hexbin_edge(1_000_000, 10_000.0) == 0.5  # 100 pts/m² → the 0.5 m minimum
+
+
+def test_horizontal_definition_of_a_compound_projjson() -> None:
+    import json
+
+    from argus_survey.qa import horizontal_definition
+
+    horiz = {"type": "ProjectedCRS", "name": "Site grid"}
+    vert = {"type": "VerticalCRS", "name": "AHD height"}
+    compound = json.dumps({"type": "CompoundCRS", "name": "Site grid + AHD", "components": [horiz, vert]})
+    assert json.loads(horizontal_definition(compound)) == horiz
+    bound = json.dumps({"type": "CompoundCRS", "components": [{"type": "BoundCRS", "source_crs": horiz}, vert]})
+    assert json.loads(horizontal_definition(bound)) == horiz
+    single = json.dumps(horiz)
+    assert horizontal_definition(single) == single
+    at_epoch = json.dumps({"type": "CoordinateMetadata", "crs": json.loads(compound), "coordinateEpoch": 2020.5})
+    assert json.loads(horizontal_definition(at_epoch)) == {
+        "type": "CoordinateMetadata",
+        "crs": horiz,
+        "coordinateEpoch": 2020.5,
+    }
+    assert horizontal_definition("EPSG:7850") == "EPSG:7850"

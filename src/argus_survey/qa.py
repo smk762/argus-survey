@@ -13,6 +13,7 @@ grid), ``gaps.geojson`` (cells inside the boundary below the density threshold).
 from __future__ import annotations
 
 import csv
+import json
 import math
 import tempfile
 from pathlib import Path
@@ -83,7 +84,7 @@ def hexbin_edge(points: int, area: float) -> float:
     PDAL's automatic edge comes from a density sample and can be several times too coarse,
     which inflates the boundary (and every per-area figure derived from it).
     """
-    density = points / area if area > 0 else 1.0
+    density = points / area if points > 0 and area > 0 else 1.0  # an empty cloud fails at hexbin, not here
     hex_area = HEX_FILL * HEX_THRESHOLD / density  # m², and a hexagon's area is 3*sqrt(3)/2 * edge²
     return max(0.5, math.sqrt(hex_area / 2.598076211))
 
@@ -146,7 +147,35 @@ def horizontal_srs(job: Job) -> str:
     """The horizontal CRS for 2D vector products (``EPSG:n`` when known)."""
     crs = job.sidecar.crs
     assert crs is not None
-    return f"EPSG:{crs.horizontal.epsg}" if crs.horizontal.epsg else crs.definition
+    return f"EPSG:{crs.horizontal.epsg}" if crs.horizontal.epsg else horizontal_definition(crs.definition)
+
+
+def horizontal_definition(definition: str) -> str:
+    """The horizontal component of a CRS definition without an EPSG code.
+
+    Such definitions are PROJJSON (``crs.record_from_projjson``); for a compound CRS (a local grid
+    on AHD, say) 2D products must get the horizontal component, not the compound CRS. Anything else
+    is returned unchanged.
+    """
+    try:
+        pj = json.loads(definition)
+    except ValueError:
+        return definition
+    if not isinstance(pj, dict):
+        return definition
+    wrapper = None
+    if pj.get("type") == "CoordinateMetadata":  # a CRS at a coordinate epoch: keep the epoch on the 2D CRS
+        wrapper, pj = pj, pj.get("crs") or {}
+    if pj.get("type") == "BoundCRS":
+        pj = pj.get("source_crs") or {}
+    if pj.get("type") != "CompoundCRS":
+        return definition
+    for comp in pj.get("components", []):
+        if comp.get("type") == "BoundCRS":
+            comp = comp.get("source_crs") or {}
+        if comp.get("type") not in {None, "VerticalCRS"}:
+            return json.dumps(comp if wrapper is None else {**wrapper, "crs": comp}, separators=(",", ":"))
+    return definition
 
 
 def raster_srs(job: Job) -> str:
@@ -234,7 +263,9 @@ def qa(job: Job, *, density_res: float = 1.0, min_density: float | None = None, 
         cell_area = grid.cell_area
         density_tif = rasters.calc(
             job.path("density.tif"),
-            f"B == 1 ? A / {cell_area!r} : {rasters.NODATA!r}",
+            # a covered cell with no points is nodata in the count raster: it is a zero-density gap, not
+            # a hole in the statistics (gdal raster calc does not propagate nodata, so guard it)
+            f"B == 1 ? (isnodata(A) ? 0 : A / {cell_area!r}) : {rasters.NODATA!r}",
             {"A": count_tif, "B": coverage},
             sink=sink,
             step=STEP,
@@ -242,7 +273,7 @@ def qa(job: Job, *, density_res: float = 1.0, min_density: float | None = None, 
         count_tif.unlink(missing_ok=True)
 
         values, nodata = rasters.read_values(density_tif, sink=sink, step=STEP)
-        covered = sorted(v for v in values if v != nodata)
+        covered = sorted(v for v in values if not rasters.is_nodata(v, nodata))
         if not covered:
             raise SurveyError("no density cells inside the coverage boundary")
         mean = sum(covered) / len(covered)

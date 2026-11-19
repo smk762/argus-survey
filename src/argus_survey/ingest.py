@@ -48,7 +48,8 @@ from argus_survey.models import (
     TransformOp,
 )
 from argus_survey.scale import scale_factors
-from argus_survey.tools import CommandSink, pdal_pipeline, run, run_json, sha256_file
+from argus_survey.tiling import untwine
+from argus_survey.tools import CommandSink, pdal_pipeline, run_json, sha256_file
 
 log = structlog.get_logger(__name__)
 
@@ -385,11 +386,7 @@ def ingest(
                 raise SurveyError("no points left after the crop" if polygons else "the inputs contain no points")
 
             copc = job.path(COPC_NAME)
-            copc.unlink(missing_ok=True)
-            tmp = job.path(".untwine-tmp")
-            shutil.rmtree(tmp, ignore_errors=True)
-            run(["untwine", "-i", str(parts_dir), "-o", str(copc), "--temp_dir", str(tmp)], step=STEP, sink=sink)
-            shutil.rmtree(tmp, ignore_errors=True)
+            untwine(parts_dir, copc, temp_dir=job.path(".untwine-tmp"), step=STEP, sink=sink)
         finally:
             shutil.rmtree(parts_dir, ignore_errors=True)
 
@@ -521,7 +518,7 @@ def _reset(job: Job) -> None:
     job.sidecar.inputs = []
     job.sidecar.exports = []  # their files went with the products above
     job.sidecar.warnings = []
-    job.sidecar.steps_done = [s for s in job.sidecar.steps_done if s == STEP]
+    job.sidecar.steps_done = []  # job.step marks ingest done again only when the redo succeeds
     job.save()
 
 

@@ -126,3 +126,66 @@ def test_survey_projection_refuses_geographic_and_mercator() -> None:
     )
     with pytest.raises(SurveyError, match="Mercator"):
         crs.require_survey_projection(merc, "x")
+
+
+def test_oblique_mercator_is_a_survey_projection() -> None:
+    # NAD83 / Michigan Oblique Mercator (Hotine): conformal, ground-scale metres; only (Web) Mercator is refused
+    r = crs.record_from_projjson(load("michigan_oblique"))
+    assert "Oblique Mercator" in r.horizontal.name
+    crs.require_survey_projection(r, "x")
+
+
+def test_geocentric_is_refused() -> None:
+    with pytest.raises(SurveyError, match="unsupported CRS type 'GeodeticCRS'"):
+        crs.record_from_projjson(load("wgs84_geocentric"))
+    ecef = CrsRecord(definition="EPSG:7842", name="GDA2020", horizontal=CrsRef(name="GDA2020", kind="GeodeticCRS"))
+    with pytest.raises(SurveyError, match="geocentric"):
+        crs.require_survey_projection(ecef, "x")
+
+
+def test_coordinate_epoch_is_unwrapped_and_kept() -> None:
+    pj = load("itrf2014_epoch")  # projinfo -o PROJJSON EPSG:7912@2020.5
+    assert pj["type"] == "CoordinateMetadata"
+    r = crs.record_from_projjson(pj)
+    assert r.epoch == 2020.5 and r.horizontal.epsg == 7912 and r.height_reference == "ellipsoidal"
+    assert r.definition == "EPSG:7912@2020.5"
+    assert crs.record_from_projjson(pj, definition="EPSG:7912@2020.5").definition == "EPSG:7912@2020.5"
+    pj["crs"].pop("id")
+    assert json.loads(crs.record_from_projjson(pj).definition)["coordinateEpoch"] == 2020.5
+    pj["crs"]["id"] = {"authority": "EPSG", "code": 7912}
+    pj["coordinateEpoch"] = 2020.12345  # every digit reaches PROJ, not :g's six
+    assert crs.record_from_projjson(pj).definition == "EPSG:7912@2020.12345"
+    pj["coordinateEpoch"] = True  # not a number
+    assert crs.record_from_projjson(pj).epoch is None
+
+
+@pytest.mark.parametrize("bad", ["--searchpaths", "-s", " -o", "@/etc/passwd", "@job.json"])
+def test_option_or_file_definitions_are_refused(bad: str) -> None:
+    with pytest.raises(SurveyError, match="not a CRS definition"):
+        crs.describe(bad)
+    with pytest.raises(SurveyError, match="not a CRS definition"):
+        crs.select_operation(bad, "EPSG:7850")
+    with pytest.raises(SurveyError, match="not a CRS definition"):
+        crs.promote_3d(bad)
+
+
+@pytest.mark.parametrize("ok", ["EPSG:7850+5711", "+proj=utm +zone=50 +south", '{"type": "ProjectedCRS"}', "PROJCRS[]"])
+def test_real_definitions_pass_the_check(ok: str) -> None:
+    assert crs.check_definition(ok) == ok
+
+
+def test_lon_extent_across_the_antimeridian() -> None:
+    assert crs.lon_extent([115.8, 116.1, 115.9]) == (115.8, 116.1)
+    assert crs.lon_extent([179.9, -179.8, 179.95]) == pytest.approx((179.9, -179.8))  # west > east
+    assert crs.lon_extent([-170.0, -60.0, 60.0, 170.0]) == (-170.0, 170.0)  # genuinely wide: left alone
+
+
+def test_lonlat_bbox_across_the_antimeridian(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from argus_survey.models import Bounds3D
+
+    out = "179.95 -17.0\n-179.95 -17.0\n179.98 -16.9\n"
+    monkeypatch.setattr(crs, "run", lambda *a, **k: SimpleNamespace(stdout=out))
+    b = Bounds3D(minx=0, miny=0, minz=0, maxx=1, maxy=1, maxz=1)
+    assert crs.lonlat_bbox("EPSG:3460", b) == pytest.approx((179.95, -17.0, -179.95, -16.9))

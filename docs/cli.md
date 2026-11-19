@@ -64,7 +64,7 @@ $ argus-survey info [OPTIONS] {path}
 
 **Arguments**:
 
-* `path`: LAS/LAZ/COPC/E57 file  [required]
+* `path <file>`: LAS/LAZ/COPC/E57 file  [required]
 
 **Options**:
 
@@ -83,7 +83,7 @@ $ argus-survey ingest [OPTIONS] {inputs}...
 
 **Arguments**:
 
-* `inputs...`: LAS/LAZ/COPC/E57 files or directories of them  [required]
+* `inputs... <list[Path]>`: LAS/LAZ/COPC/E57 files or directories of them  [required]
 
 **Options**:
 
@@ -110,7 +110,7 @@ $ argus-survey synth [OPTIONS] {out}
 
 **Arguments**:
 
-* `out`: Output .las/.laz (with --kit: the directory to fill)  [required]
+* `out <path>`: Output .las/.laz (with --kit: the directory to fill)  [required]
 
 **Options**:
 
@@ -135,7 +135,7 @@ $ argus-survey qa [OPTIONS]
 
 * `-j, --job <str>`: Job id under SURVEY_JOBS_DIR (created on first use)
 * `--out <path>`: Job directory (its name is the job id)
-* `--density-res <float>`: Density grid cell size (m)  [default: 1.0]
+* `--density-res <float range>`: Density grid cell size (m)  [default: 1.0; x&gt;=0.01]
 * `--min-density <float>`: Gap threshold in pts/m² (default: 25% of the median)
 * `--workers <int range>`: Parallel tiles (default: SURVEY_WORKERS, else ≤4 as CPUs and ~4 GiB each allow)  [x&gt;=1]
 * `--help`: Show this message and exit.
@@ -181,7 +181,7 @@ $ argus-survey surfaces [OPTIONS]
 
 * `-j, --job <str>`: Job id under SURVEY_JOBS_DIR (created on first use)
 * `--out <path>`: Job directory (its name is the job id)
-* `--res <float>`: Cell size (m)  [default: 0.5]
+* `--res <float range>`: Cell size (m)  [default: 0.5; x&gt;=0.01]
 * `--dtm / --no-dtm`: [default: dtm]
 * `--dsm / --no-dsm`: [default: dsm]
 * `--chm / --no-chm`: [default: chm]
@@ -205,7 +205,7 @@ $ argus-survey contours [OPTIONS]
 
 * `-j, --job <str>`: Job id under SURVEY_JOBS_DIR (created on first use)
 * `--out <path>`: Job directory (its name is the job id)
-* `--interval <float>`: Contour interval (m)  [default: 0.5]
+* `--interval <float range>`: Contour interval (m)  [default: 0.5; x&gt;=0.01]
 * `--index <int>`: Every N-th contour is an index contour (0: none)  [default: 5]
 * `--help`: Show this message and exit.
 
@@ -221,14 +221,14 @@ $ argus-survey run [OPTIONS] {inputs}...
 
 **Arguments**:
 
-* `inputs...`: LAS/LAZ/COPC/E57 files or directories  [required]
+* `inputs... <list[Path]>`: LAS/LAZ/COPC/E57 files or directories  [required]
 
 **Options**:
 
 * `-j, --job <str>`: Job id under SURVEY_JOBS_DIR (created on first use)
 * `--out <path>`: Job directory (its name is the job id)
-* `--res <float>`: Surface cell size (m)  [default: 0.5]
-* `--interval <float>`: Contour interval (m)  [default: 0.5]
+* `--res <float range>`: Surface cell size (m)  [default: 0.5; x&gt;=0.01]
+* `--interval <float range>`: Contour interval (m)  [default: 0.5; x&gt;=0.01]
 * `--t-srs <str>`: Target CRS, e.g. EPSG:7850+5711
 * `--s-srs <str>`: Source CRS when the files have none
 * `--assume-vertical <str>`: EPSG:&lt;code&gt; or &#x27;ellipsoidal&#x27;

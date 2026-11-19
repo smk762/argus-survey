@@ -14,7 +14,7 @@ def test_safe_ids(good: str) -> None:
     assert is_safe_id(good)
 
 
-@pytest.mark.parametrize("bad", ["", ".", "..", "../x", "a/b", "-x", ".hidden", "a b", "a\x00"])
+@pytest.mark.parametrize("bad", ["", ".", "..", "../x", "a/b", "-x", ".hidden", "a b", "a\x00", "site1\n", "x" * 129])
 def test_unsafe_ids(bad: str) -> None:
     assert not is_safe_id(bad)
 
@@ -87,3 +87,41 @@ def test_open_job_job_or_out(tmp_path: Path) -> None:
         open_job(None, None, jobs_root=tmp_path)
     j = open_job(None, tmp_path / "out1", jobs_root=tmp_path / "unused", create=True)
     assert j.id == "out1" and j.dir == (tmp_path / "out1").resolve()
+
+
+def test_non_utf8_sidecar_is_a_survey_error(tmp_path: Path) -> None:
+    JobStore(tmp_path).open("x", create=True)
+    (tmp_path / "x" / "job.json").write_bytes(b'{"job_id": "\xff\xfe"}')
+    with pytest.raises(SurveyError, match="not UTF-8"):
+        JobStore(tmp_path).open("x")
+    assert JobStore(tmp_path).list() == []  # skipped, not a crash
+
+
+def test_concurrent_saves_and_warnings(tmp_path: Path) -> None:
+    """Threads saving one job never share a temp file, never lose the sidecar, never duplicate a warning."""
+    import threading
+
+    job = JobStore(tmp_path).open("x", create=True)
+    (job.dir / "a.txt").write_text("hello")
+    errors: list[BaseException] = []
+
+    def work(i: int) -> None:
+        try:
+            for n in range(20):
+                job.warn("same warning")
+                job.warn(f"w{i}-{n}")
+                job.add_product(f"p{i}-{n}", "a.txt", step="t")
+                job.save()
+        except BaseException as exc:  # pragma: no cover - the assertion reports it
+            errors.append(exc)
+
+    threads = [threading.Thread(target=work, args=(i,)) for i in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
+    again = JobStore(tmp_path).open("x")
+    assert again.sidecar.warnings.count("same warning") == 1
+    assert len(again.sidecar.warnings) == 1 + 6 * 20 and len(again.sidecar.products) == 6 * 20
+    assert not list(job.dir.glob("*.tmp"))

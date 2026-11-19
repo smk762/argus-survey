@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
+### Fixed (ai-code-auditor sweep: 73 findings fixed, 12 closed as not applicable)
+- **QA density and gaps:** a covered cell with no points became `-9999 / cell_area` (a large negative "density" at 0.5 m, silently dropped at 1 m), because `gdal raster calc` does not propagate nodata. Empty covered cells now count as zero-density gaps, so gap % can read higher than before, correctly.
+- **Accuracy:** blunder screening without a class target (every VVA, and an NVA without `--class-cm`) tests each residual against 3 × the RMSE of the group's *other* residuals (leave-one-out); with the group's own RMSE a blunder could never be flagged in a group of 9 or fewer. Groups under 3 points are not screened, and the report says so. NVA pass/fail is judged at the printed 0.1 cm, so 7.0 cm meets a 7 cm class. Check-point CSV errors name the row; short rows, non-finite coordinates and cct's per-point error lines raise a clear error.
+- **Datums:** vertical datums without EPSG codes are compared by name in volume/cut-fill (two code-less datums used to pass unchecked); `--design-vertical`/`--base-vertical` accept `ellipsoidal`. Coordinate epochs (`EPSG:x@epoch`, PROJJSON `CoordinateMetadata`) are recorded instead of refused. Oblique Mercator (Hotine) working CRSs are accepted. `--operation` falls through to a matching candidate whose grids are on disk. Scale factors read ellipsoid axes in their own units (Clarke's feet) and handle spheres.
+- **Safety:** CRS definitions starting with `-` or `@` are refused (projinfo read `@file`). Report values are HTML-escaped by default; the command log uses POSIX shell quoting. CLI output no longer parses zone names, CRS fields or doctor details as Rich markup (the height reference was being swallowed).
+- **Robustness:** a failed untwine merge or overlay render keeps the previous output, and none of them (export included) leaves a partial file or scratch directory; sidecar writes use a per-call temp file and the job's own sidecar updates (products, warnings, steps) hold the job lock; a failed `--force` re-ingest no longer leaves ingest marked done. Refused, timed-out and missing-tool commands are recorded in the command log (exit 125, 124, 127; a refusal read "exit 0"). Large polygon WKT no longer overflows the CSV reader; vector files with more than one layer are refused, naming the layers.
+- Smaller fixes: DoD figure saturation scales with the LoD; web overlays are capped on the longer side and small rasters are not upscaled; `grid.snap` never puts the origin above the minimum; north-up checks refuse flipped rasters; NaN/Inf nodata is read; ENVI byte order is taken from the header; `profile` keeps one sidecar entry matching its files; profile ticks always terminate.
+
+### Changed
+- **Wire:** `res`, `interval` and `density_res` have a minimum of 0.01 m (API and CLI); `dsm_method` is `idw|max` and `chm_method` `max|radius`; `index` is ≥ 0. argus-sightline must regenerate its types.
+
+- **Job ids are checked by argus-cortex's `fs.safe_name`** (argus-cortex 0.8, ai-code-auditor#56): the same rule as before (start alphanumeric, then letters, digits, `.`, `_` or `-`), now matched against the whole string and capped at 128 characters. argus-cortex (pydantic-only without extras) is now a base dependency, pinned `>=0.8,<0.9`, as is the `server` extra's.
+
 ## [0.1.2] - 2026-11-14
 
 Reference docs, and release fixes: the image reports its tag.

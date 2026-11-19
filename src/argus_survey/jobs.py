@@ -14,15 +14,16 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import threading
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import structlog
+from argus_cortex.fs import PathRefused, safe_name
 from pydantic import ValidationError
 
 from argus_survey import __version__
@@ -42,11 +43,15 @@ from argus_survey.tools import sha256_file, versions
 
 log = structlog.get_logger(__name__)
 
-_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
 
 def is_safe_id(value: str) -> bool:
-    return bool(value) and value not in {".", ".."} and _SAFE_ID.match(value) is not None
+    """One path segment: starts alphanumeric, then letters, digits, ``.``, ``_`` or ``-`` (argus-cortex's
+    :func:`~argus_cortex.fs.safe_name`, which matches the whole string, so a trailing newline is refused)."""
+    try:
+        safe_name(value)
+    except PathRefused:
+        return False
+    return True
 
 
 def require_safe_id(value: str, label: str = "job id") -> str:
@@ -56,11 +61,19 @@ def require_safe_id(value: str, label: str = "job id") -> str:
 
 
 def save_sidecar(job_dir: Path, sidecar: JobSidecar) -> Path:
+    """Write ``job.json`` atomically: a temp file unique to this call, then ``os.replace``."""
     job_dir.mkdir(parents=True, exist_ok=True)
     path = job_dir / SIDECAR_NAME
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(sidecar.model_dump_json(indent=2), encoding="utf-8")
-    tmp.replace(path)
+    text = sidecar.model_dump_json(indent=2)
+    # unique per call (two threads of one process must never share it); mkstemp would make it 0600
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        with tmp.open("x", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -69,7 +82,10 @@ def load_sidecar(job_dir: Path) -> JobSidecar:
     path = job_dir / SIDECAR_NAME
     if not path.is_file():
         raise FileNotFoundError(f"no {SIDECAR_NAME} in {job_dir}")
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise SurveyError(f"invalid {path}: not UTF-8 ({exc})") from exc
     try:
         return JobSidecar.model_validate_json(text)
     except ValidationError as exc:
@@ -162,8 +178,9 @@ class Job:
             description=description,
             meta=meta,
         )
-        self.sidecar.products[kind] = product
-        self.save()
+        with self._lock:
+            self.sidecar.products[kind] = product
+            self.save()
         return product
 
     def product_path(self, kind: str, *, needed_by: str | None = None) -> Path:
@@ -178,11 +195,13 @@ class Job:
 
     # ── diagnostics ──
     def warn(self, message: str) -> None:
-        if message not in self.sidecar.warnings:
+        with self._lock:
+            if message in self.sidecar.warnings:
+                return
             self.sidecar.warnings.append(message)
-            log.info("job.warning", job=self.id, message=message)
             self.save()
-            self.emit("warning", WarningEvent(message=message).model_dump())
+        log.info("job.warning", job=self.id, message=message)
+        self.emit("warning", WarningEvent(message=message).model_dump())
 
     @contextmanager
     def step(self, name: str) -> Iterator[None]:
@@ -191,13 +210,16 @@ class Job:
         log.info("step.start", job=self.id, step=name)
         self.emit("step", StepEvent(step=name, state="start").model_dump(exclude_none=True))
         yield
-        self.sidecar.timings[name] = round(time.perf_counter() - t0, 3)
-        if name not in self.sidecar.steps_done:
-            self.sidecar.steps_done.append(name)
-        self.sidecar.tools = versions()
-        self.save()
-        log.info("step.done", job=self.id, step=name, seconds=self.sidecar.timings[name])
-        self.emit("step", StepEvent(step=name, state="done", seconds=self.sidecar.timings[name]).model_dump())
+        seconds = round(time.perf_counter() - t0, 3)
+        tools = versions()
+        with self._lock:
+            self.sidecar.timings[name] = seconds
+            if name not in self.sidecar.steps_done:
+                self.sidecar.steps_done.append(name)
+            self.sidecar.tools = tools
+            self.save()
+        log.info("step.done", job=self.id, step=name, seconds=seconds)
+        self.emit("step", StepEvent(step=name, state="done", seconds=seconds).model_dump())
 
     def require_crs(self, step: str, *, height: bool) -> None:
         """Refuse *step* without a CRS — and, for height-dependent steps, without a vertical datum (rule 1)."""

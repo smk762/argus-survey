@@ -13,10 +13,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SURVEY_VERSION = 1
 SIDECAR_NAME = "job.json"
+
+# Smallest raster cell and contour interval a request may ask for (metres). 1 cm covers terrestrial-scanner
+# work; anything finer only asks the workers for unbounded rasters or contour levels. The CLI uses the same limits.
+MIN_RES_M = 0.01
+MIN_INTERVAL_M = 0.01
+DsmMethod = Literal["idw", "max"]  # surfaces.surfaces' choices
+ChmMethod = Literal["max", "radius"]
 
 
 class SurveyError(Exception):
@@ -525,7 +532,8 @@ class AccuracyGroup(_Model):
     min_m: float | None = None
     max_m: float | None = None
     median_m: float | None = None
-    # ids of residuals beyond 3 × the target RMSE (§7.2 blunder) or, with no class, 3 × the data RMSE (§C.2)
+    # ids of residuals beyond 3 × the target RMSE (§7.2 blunder) or, with no class, 3 × the RMSE of the
+    # group's other residuals (leave-one-out; groups under 3 points are not screened)
     blunders: list[str] = Field(default_factory=list)
 
 
@@ -567,7 +575,7 @@ class IngestBody(_Model):
 
 
 class QaBody(_Model):
-    density_res: float = Field(default=1.0, gt=0)
+    density_res: float = Field(default=1.0, ge=MIN_RES_M, allow_inf_nan=False)
     min_density: float | None = Field(default=None, ge=0)
 
 
@@ -579,18 +587,25 @@ class GroundBody(_Model):
 
 
 class SurfacesBody(_Model):
-    res: float = Field(default=0.5, gt=0)
+    res: float = Field(default=0.5, ge=MIN_RES_M, allow_inf_nan=False)
     dtm: bool = True
     dsm: bool = True
     chm: bool = True
     fill_voids: int | None = Field(default=None, ge=1)
-    dsm_method: str = "idw"
-    chm_method: str = "max"  # max (binned) or radius (highest point within res·√2; fewer voids, wider crowns)
+    dsm_method: DsmMethod = "idw"
+    chm_method: ChmMethod = "max"  # max (binned) or radius (highest point within res·√2; fewer voids, wider crowns)
 
 
 class ContoursBody(_Model):
-    interval: float = Field(default=0.5, gt=0)
-    index: int | None = 5
+    interval: float = Field(default=0.5, ge=MIN_INTERVAL_M, allow_inf_nan=False)
+    index: int | None = Field(default=5, ge=0)  # every N-th contour is an index contour; 0 or null: none
+
+    @field_validator("index")
+    @classmethod
+    def _index_not_one(cls, v: int | None) -> int | None:
+        if v == 1:
+            raise ValueError("index must be 0/null (no index contours) or 2 or more")
+        return v
 
 
 class VolumeBody(_Model):
@@ -643,8 +658,8 @@ class ProfileBody(_Model):
 
 
 class RunBody(IngestBody):
-    res: float = Field(default=0.5, gt=0)
-    interval: float = Field(default=0.5, gt=0)
+    res: float = Field(default=0.5, ge=MIN_RES_M, allow_inf_nan=False)
+    interval: float = Field(default=0.5, ge=MIN_INTERVAL_M, allow_inf_nan=False)
     method: str = "smrf"
     preset: str | None = None
     fill_voids: int | None = Field(default=None, ge=1)

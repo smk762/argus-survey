@@ -41,7 +41,7 @@ from argus_survey.jobs import Job
 from argus_survey.models import CrsRecord, GridSpec, SurveyError, VolumeReport, ZoneVolume
 from argus_survey.qa import raster_srs
 from argus_survey.tools import CommandSink, run, run_json
-from argus_survey.vectors import densify, read_polygons, wkt_bbox, wkt_rings, write_zones
+from argus_survey.vectors import allow_large_csv_fields, densify, read_polygons, wkt_bbox, wkt_rings, write_zones
 
 log = structlog.get_logger(__name__)
 
@@ -232,26 +232,49 @@ def check_raster_crs(job: Job, path: Path, *, assume_vertical: str | None, label
             f"{label} is in {rec.horizontal.name}, the job in {job_crs.horizontal.name}; reproject it first "
             "(gdalwarp -t_srs) so nothing is resampled implicitly"
         )
-    job_v = job_crs.vertical.epsg if job_crs.vertical else None
+    job_vname = job_crs.vertical.name if job_crs.vertical else "heights"
     if rec.vertical is None:
         if assume_vertical is None:
             raise SurveyError(
                 f"{label} {path.name} declares no vertical datum; heights can't be compared with the job's "
-                f"{job_crs.vertical.name if job_crs.vertical else 'heights'} unless you state it "
-                "(e.g. --design-vertical EPSG:5711)"
+                f"{job_vname} unless you state it (e.g. --design-vertical EPSG:5711)"
             )
-        code = assume_vertical.upper().removeprefix("EPSG:")
+        if assume_vertical.strip().lower() == "ellipsoidal":
+            if job_crs.height_reference != "ellipsoidal":
+                raise SurveyError(
+                    f"{label} heights are stated as ellipsoidal but the job's are {job_vname}; vertical "
+                    "transformation of rasters is not supported in v0"
+                )
+            return f"{label} {path.name} has no vertical datum; the user stated ellipsoidal heights"
+        code = assume_vertical.strip().upper().removeprefix("EPSG:")
+        job_v = job_crs.vertical.epsg if job_crs.vertical else None
+        if job_v is None:
+            raise SurveyError(
+                f"{label} heights are stated as {assume_vertical}, but the job's vertical datum ({job_vname}) has "
+                "no EPSG code to match it against; give the raster a vertical CRS identical to the job's"
+                + (" or state 'ellipsoidal'" if job_crs.height_reference == "ellipsoidal" else "")
+            )
         if not code.isdigit() or int(code) != job_v:
             raise SurveyError(
                 f"{label} heights are stated as {assume_vertical} but the job is in EPSG:{job_v}; vertical "
                 "transformation of rasters is not supported in v0"
             )
         return f"{label} {path.name} has no vertical datum; the user stated EPSG:{code}"
-    if rec.vertical.epsg != job_v or rec.height_reference != job_crs.height_reference:
-        raise SurveyError(
-            f"{label} heights are {rec.vertical.name}, the job's {job_crs.vertical.name if job_crs.vertical else '?'}"
-        )
+    if not same_vertical(rec, job_crs):
+        raise SurveyError(f"{label} heights are {rec.vertical.name}, the job's {job_vname}")
     return None
+
+
+def same_vertical(a: CrsRecord, b: CrsRecord) -> bool:
+    """Whether two records' heights are on the same datum: EPSG codes when both have one, else names (as the
+    horizontal check does), so two datums without codes are never taken as equal just because neither has one."""
+    if a.height_reference != b.height_reference:
+        return False
+    if a.vertical is None or b.vertical is None:
+        return a.vertical is None and b.vertical is None
+    if a.vertical.epsg is not None and b.vertical.epsg is not None:
+        return a.vertical.epsg == b.vertical.epsg
+    return a.vertical.name.strip().lower() == b.vertical.name.strip().lower()
 
 
 def align_raster(
@@ -518,6 +541,7 @@ def _footprint(raster: Path, work: Path, srs: str, *, sink: CommandSink | None, 
         step=step,
         sink=sink,
     )
+    allow_large_csv_fields()
     with poly.open(encoding="utf-8") as fh:
         wkts = [r["WKT"] for r in csv.DictReader(fh) if r.get("WKT")]
     if not wkts:

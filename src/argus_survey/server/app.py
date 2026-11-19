@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import threading
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -165,12 +166,20 @@ def create_app(
         out: dict[str, list[str]] = {k: [] for k in INPUT_KINDS}
         if data_root.is_dir():
             root = data_root.resolve()
-            for p in sorted(root.rglob("*")):
-                if not p.is_file() or any(part.startswith(".") for part in p.relative_to(root).parts):
-                    continue
-                for kind, suffixes in INPUT_KINDS.items():
-                    if p.suffix.lower() in suffixes:
-                        out[kind].append(str(p.relative_to(root)))
+            # Listing the data root *is* this route: it is the input picker, and the root is the operator's
+            # mounted input folder, so a cached index would only hide the file they just dropped in. Hidden
+            # dirs are pruned rather than walked; the handler is sync, so it runs off the event loop.
+            for dirpath, dirnames, filenames in os.walk(root):  # nosemgrep: handler-scans-all
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                for name in filenames:
+                    if name.startswith("."):
+                        continue
+                    rel = (Path(dirpath) / name).relative_to(root)
+                    for kind, suffixes in INPUT_KINDS.items():
+                        if Path(name).suffix.lower() in suffixes and (Path(dirpath) / name).is_file():
+                            out[kind].append(str(rel))
+        for paths in out.values():
+            paths.sort(key=lambda p: Path(p).parts)
         return out
 
     @app.get("/jobs")
