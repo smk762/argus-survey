@@ -25,6 +25,10 @@ def test_already_escaped_values_are_not_escaped_twice() -> None:
     joined = rep.e("a & b") + ' <span class="x">'
     assert isinstance(joined, rep.Html) and joined == "a &amp; b &lt;span class=&quot;x&quot;&gt;"
     assert rep.e("1") + rep.Html("<br>") == "1<br>"
+    # plain text + Html too: the plain part is escaped once and the result stays Html (not escaped again in a cell)
+    left = "a & b" + rep.Html("<br>")
+    assert isinstance(left, rep.Html) and left == "a &amp; b<br>"
+    assert "<td>a &amp; b<br></td>" in rep.kv([("k", left)])
 
 
 def test_figure_escapes_the_src_attribute() -> None:

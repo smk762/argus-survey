@@ -163,6 +163,9 @@ def horizontal_definition(definition: str) -> str:
         return definition
     if not isinstance(pj, dict):
         return definition
+    wrapper = None
+    if pj.get("type") == "CoordinateMetadata":  # a CRS at a coordinate epoch: keep the epoch on the 2D CRS
+        wrapper, pj = pj, pj.get("crs") or {}
     if pj.get("type") == "BoundCRS":
         pj = pj.get("source_crs") or {}
     if pj.get("type") != "CompoundCRS":
@@ -171,7 +174,7 @@ def horizontal_definition(definition: str) -> str:
         if comp.get("type") == "BoundCRS":
             comp = comp.get("source_crs") or {}
         if comp.get("type") not in {None, "VerticalCRS"}:
-            return json.dumps(comp, separators=(",", ":"))
+            return json.dumps(comp if wrapper is None else {**wrapper, "crs": comp}, separators=(",", ":"))
     return definition
 
 

@@ -152,6 +152,9 @@ def test_coordinate_epoch_is_unwrapped_and_kept() -> None:
     assert crs.record_from_projjson(pj, definition="EPSG:7912@2020.5").definition == "EPSG:7912@2020.5"
     pj["crs"].pop("id")
     assert json.loads(crs.record_from_projjson(pj).definition)["coordinateEpoch"] == 2020.5
+    pj["crs"]["id"] = {"authority": "EPSG", "code": 7912}
+    pj["coordinateEpoch"] = 2020.12345  # every digit reaches PROJ, not :g's six
+    assert crs.record_from_projjson(pj).definition == "EPSG:7912@2020.12345"
     pj["coordinateEpoch"] = True  # not a number
     assert crs.record_from_projjson(pj).epoch is None
 

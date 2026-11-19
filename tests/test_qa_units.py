@@ -43,4 +43,10 @@ def test_horizontal_definition_of_a_compound_projjson() -> None:
     assert json.loads(horizontal_definition(bound)) == horiz
     single = json.dumps(horiz)
     assert horizontal_definition(single) == single
+    at_epoch = json.dumps({"type": "CoordinateMetadata", "crs": json.loads(compound), "coordinateEpoch": 2020.5})
+    assert json.loads(horizontal_definition(at_epoch)) == {
+        "type": "CoordinateMetadata",
+        "crs": horiz,
+        "coordinateEpoch": 2020.5,
+    }
     assert horizontal_definition("EPSG:7850") == "EPSG:7850"

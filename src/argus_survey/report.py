@@ -76,6 +76,10 @@ class Html(str):
         """``Html + x`` stays safe: a plain *x* is escaped first (as markupsafe does)."""
         return Html(str.__add__(self, e(other)))
 
+    def __radd__(self, other: str) -> Html:
+        """``x + Html`` stays safe too (``str + Html`` would otherwise be a plain str, escaped again in a cell)."""
+        return Html(str.__add__(e(other), self))
+
 
 def e(value: Any) -> Html:
     """HTML-escape *value* (``None`` → empty); already-safe :class:`Html` passes through unchanged."""
