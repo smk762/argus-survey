@@ -410,6 +410,7 @@ def create_app(
                     method=b.method,
                     preset=b.preset,
                     fill_voids=b.fill_voids,
+                    force=b.force,
                     echo=lambda _m: None,
                 ),
                 True,

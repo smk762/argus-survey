@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **`run` honours `force`:** `POST /jobs/{id}/run` accepted `"force": true` but dropped it, so re-running an ingested job was refused ("already ingested") and Sightline's redo from the capture panel never worked. `argus-survey run` gains `--force` to match `ingest`.
+
 ## [0.2.0] - 2026-11-19
 
 ### Fixed (ai-code-auditor sweep: 73 findings fixed, 12 closed as not applicable)

@@ -31,6 +31,7 @@ def run_all(
     preset: str | None = None,
     fill_voids: int | None = None,
     workers: int | None = None,
+    force: bool = False,
     echo: Callable[[str], Any] = print,
 ) -> Job:
     filter_params(method, preset=preset)  # refuse a bad method/preset before the ingest, not after it
@@ -43,6 +44,7 @@ def run_all(
         operation=operation,
         crop=crop,
         crop_srs=crop_srs,
+        force=force,
     )
     echo(f"ingest   {rec.output_count:,} points · {job.sidecar.crs.name if job.sidecar.crs else '?'}")
     q = qa(job, workers=workers)

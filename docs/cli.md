@@ -239,6 +239,7 @@ $ argus-survey run [OPTIONS] {inputs}...
 * `--preset <str>`: Ground preset: stockpile
 * `--fill-voids <int range>`: Fill DTM voids up to N cells  [x&gt;=1]
 * `--workers <int range>`: Parallel tiles (default: SURVEY_WORKERS, else ≤4 as CPUs and ~4 GiB each allow)  [x&gt;=1]
+* `--force`: Redo an ingested job (deletes its products)
 * `--help`: Show this message and exit.
 
 ## `argus-survey volume`

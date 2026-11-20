@@ -232,3 +232,22 @@ def test_demo_kit_known_answers_over_the_api(tmp_path: Path) -> None:
     assert cf[-1][0] == "done", cf[-1]
     pad = cf[-1][1]["result"]["zones"][0]
     assert pad["below_m3"] - pad["above_m3"] == pytest.approx(truth["pad_net_cut_m3"], rel=0.03)
+
+
+def test_run_passes_force_to_ingest(roots, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """`force` on POST /run reaches ingest: RunBody inherits it from IngestBody, and it was once dropped."""
+    from argus_survey import pipeline
+    from argus_survey.models import SurveyError
+
+    seen: list[bool] = []
+
+    def fake_ingest(job, inputs, **kw):  # type: ignore[no-untyped-def]
+        seen.append(kw["force"])
+        raise SurveyError("stop after ingest")
+
+    monkeypatch.setattr(pipeline, "ingest", fake_ingest)
+    c = client(roots, True)
+    for force in (True, False):
+        r = c.post("/jobs/j1/run", json={"inputs": ["site/a.laz"], "force": force})
+        assert r.status_code == 200 and "stop after ingest" in r.text
+    assert seen == [True, False]

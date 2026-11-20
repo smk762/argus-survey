@@ -448,6 +448,7 @@ def run(
     preset: Annotated[str | None, typer.Option("--preset", help="Ground preset: stockpile")] = None,
     fill_voids: Annotated[int | None, typer.Option("--fill-voids", min=1, help="Fill DTM voids up to N cells")] = None,
     workers: WorkersOpt = None,
+    force: Annotated[bool, typer.Option("--force", help="Redo an ingested job (deletes its products)")] = False,
 ) -> None:
     """ingest → qa → ground → surfaces → contours → report, in one job."""
     from argus_survey.pipeline import run_all
@@ -469,6 +470,7 @@ def run(
             preset=preset,
             fill_voids=fill_voids,
             workers=workers,
+            force=force,
             echo=console.print,
         )
     except SurveyError as exc:
