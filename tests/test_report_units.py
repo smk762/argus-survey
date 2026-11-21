@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+import subprocess
 
 from argus_survey import report as rep
 
@@ -38,9 +39,26 @@ def test_figure_escapes_the_src_attribute() -> None:
 
 
 def test_command_log_quotes_like_a_posix_shell() -> None:
-    for arg in ("it's", "x'; rm -rf ~; '", "", "a`b`", "$HOME", "a\nb", "#c", "~", "plain", "a=b"):
+    """Through a real shell: shlex.split expands nothing, so it can't see an unquoted ``$HOME``, `` ` ``, ``~`` or ``#``."""
+    for arg in ("it's", "x'; rm -rf ~; '", "", "a`b`", "$HOME", "a\nb", "#c", "~", "plain", "a=b", "a b", "*", "a|b"):
         assert shlex.split(rep._quote(arg)) == [arg], arg
+        shell = subprocess.run(["sh", "-c", f"printf '%s' {rep._quote(arg)}"], capture_output=True, text=True)
+        assert shell.returncode == 0 and shell.stdout == arg, (arg, shell.stdout, shell.stderr)
     assert rep._quote("plain") == "plain"
+
+
+def test_a_change_never_borrows_another_surface_dod() -> None:
+    from argus_survey.models import ChangeReport, JobSidecar
+
+    dtm, dsm = (ChangeReport.model_construct(surface=s) for s in ("dtm", "dsm"))
+    generic = {"dod_lod": object()}
+    s = JobSidecar.model_construct(products=generic, change=dsm, changes=[dtm, dsm])  # dsm was compared last
+    assert rep.dod_lod_kind(s, dsm) == "dod_lod"
+    assert rep.dod_lod_kind(s, dtm) is None  # dod_lod is the DSM's: not shown under the DTM heading
+    s = JobSidecar.model_construct(products={**generic, "dod_dtm_lod": object()}, change=dsm, changes=[dtm, dsm])
+    assert rep.dod_lod_kind(s, dtm) == "dod_dtm_lod"
+    legacy = JobSidecar.model_construct(products=generic, change=dtm, changes=[])  # older sidecar: latest only
+    assert rep.dod_lod_kind(legacy, dtm) == "dod_lod"
 
 
 def test_coordinate_epoch_is_formatted() -> None:

@@ -46,12 +46,52 @@ def test_no_python_gis_bindings_in_the_lock() -> None:
     assert not names & BANNED_PACKAGES, f"uv.lock pulls in {sorted(names & BANNED_PACKAGES)}"
 
 
+# Any spelling of a Python package install: pip, pip3, python -m pip, pipx, `uv pip install`, `uv add`, with flags
+# anywhere ("pip --no-cache-dir install").
+PIP_INSTALL = re.compile(r"\b(pip[0-9.]*|pipx|uv)\b.*\b(install|add)\b")
+
+
+def pip_installed_gis_bindings(dockerfile: str) -> list[str]:
+    """Shell commands in *dockerfile* that pip-install a banned package, read per logical instruction.
+
+    A RUN usually continues over several lines ("RUN pip install \\" then the packages), so continuations are
+    joined (comment lines inside one dropped, as Docker does) before each ``&&``/``;``-separated command is checked.
+    """
+    text = re.sub(r"(?m)^[ \t]*#.*\n", "", dockerfile.lower())
+    text = re.sub(r"\\[ \t]*\n", " ", text)
+    return [
+        " ".join(command.split())
+        for line in text.splitlines()
+        for command in re.split(r"&&|\|\||;", line)
+        if PIP_INSTALL.search(command) and any(re.search(rf"\b{p}\b", command) for p in BANNED_PACKAGES)
+    ]
+
+
 def test_no_pip_install_of_gis_bindings_in_the_image() -> None:
-    text = (ROOT / "Dockerfile").read_text(encoding="utf-8").lower()
-    for line in text.splitlines():
-        if "pip install" in line or "uv pip" in line or "uv add" in line:
-            hits = [p for p in BANNED_PACKAGES if re.search(rf"\b{p}\b", line)]
-            assert not hits, f"Dockerfile installs {hits} with pip: {line.strip()}"
+    hits = pip_installed_gis_bindings((ROOT / "Dockerfile").read_text(encoding="utf-8"))
+    assert not hits, f"Dockerfile installs Python GIS bindings with pip: {hits}"
+
+
+@pytest.mark.parametrize(
+    "dockerfile",
+    [
+        "RUN pip install gdal\n",
+        "RUN pip install --no-cache-dir \\\n    numpy \\\n    # bindings\n    GDAL pdal\n",  # continued, with a comment
+        "RUN pip3 install pyproj\n",
+        "RUN pip  install rasterio\n",
+        "RUN pip --no-cache-dir install laspy\n",
+        "RUN python3 -m pip install fiona\n",
+        "RUN uv pip install --system pdal\n",
+        "RUN apt-get update && uv add \\\n  rasterio\n",
+    ],
+)
+def test_the_dockerfile_guard_sees_every_install_spelling(dockerfile: str) -> None:
+    assert pip_installed_gis_bindings(dockerfile), dockerfile
+
+
+def test_the_dockerfile_guard_ignores_other_commands() -> None:
+    ok = "RUN apt-get install -y gdal-bin \\\n    && pip install \\\n    structlog\nRUN uv sync --locked\nENV GDAL_DATA=/x\n"
+    assert pip_installed_gis_bindings(ok) == []
 
 
 def test_no_banned_pdal_stages() -> None:

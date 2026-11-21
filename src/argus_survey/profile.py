@@ -34,11 +34,12 @@ def nice_ticks(lo: float, hi: float, target: int = 6) -> list[float]:
     step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
     start = math.floor(lo / step) * step
     n = math.floor((hi - start) / step + 1e-9) + 1  # indexed, not accumulated: no drift, always ends
+    ndigits = max(0, 3 - math.floor(math.log10(step)))  # relative to the step: fine ticks stay distinct
     ticks = []
     for i in range(min(n, 10 * target + 2)):
         t = start + i * step
         if t >= lo - step * 1e-9:
-            ticks.append(round(t, 10))
+            ticks.append(round(t, ndigits))
     return ticks
 
 
@@ -87,15 +88,18 @@ def svg(title: str, chain: list[float], series: dict[str, list[float | None]], v
     lx = ml + 10
     for name, s in series.items():
         colour = COLOURS.get(name, "#333")
-        runs: list[list[str]] = [[]]
+        runs: list[list[tuple[float, float]]] = [[]]
         for c, z in zip(chain, s, strict=True):
             if z is None:
                 runs.append([])
             else:
-                runs[-1].append(f"{px(c):.1f},{py(z):.1f}")
+                runs[-1].append((px(c), py(z)))
         for r in runs:
             if len(r) > 1:
-                out.append(f'<polyline fill="none" stroke="{colour}" stroke-width="1.6" points="{" ".join(r)}"/>')
+                points = " ".join(f"{x:.1f},{y:.1f}" for x, y in r)
+                out.append(f'<polyline fill="none" stroke="{colour}" stroke-width="1.6" points="{points}"/>')
+            elif r:  # a sample with a void on both sides: no line to draw, but it is data — show it
+                out.append(f'<circle cx="{r[0][0]:.1f}" cy="{r[0][1]:.1f}" r="2" fill="{colour}"/>')
         out.append(f'<line x1="{lx}" x2="{lx + 18}" y1="{mt + 14}" y2="{mt + 14}" stroke="{colour}" stroke-width="3"/>')
         out.append(f'<text x="{lx + 22}" y="{mt + 18}">{name.upper()}</text>')
         lx += 70

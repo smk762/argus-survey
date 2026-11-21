@@ -151,6 +151,11 @@ def scale_factors(
         ["proj", "-V", *args], step=step, sink=sink, stdin="".join(f"{lo!r} {la!r}\n" for lo, la in lonlat)
     ).stdout
     factors = parse_proj_verbose(verbose)
+    if len(factors) != len(lonlat) or not all(math.isfinite(v) for f in factors for v in f):
+        raise SurveyError(
+            f"could not read the scale factor at every corner of the extent (proj -V answered for {len(factors)} of "
+            f"{len(lonlat)} points) — is the extent outside the projection's domain, or is the CRS ({crs.name}) wrong?"
+        )
     _, k, convergence = factors[0]
     corner_k = [f[1] for f in factors]
     lon, lat = lonlat[0]

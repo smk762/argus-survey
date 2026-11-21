@@ -184,19 +184,20 @@ def test_run_over_sse_then_read_products(tmp_path: Path) -> None:
     assert c.get("/jobs/demo/report").headers["content-type"].startswith("text/html")
     assert c.get("/jobs/demo/nope").status_code == 404
 
+    n_commands = len(c.get("/jobs/demo").json()["commands"])
     view = c.get("/jobs/demo/web/hillshade").json()
     assert len(view["coordinates"]) == 4 and 115 < view["coordinates"][0][0] < 116
     assert c.get(view["url"]).headers["content-type"] == "image/png"
     contours = c.get("/jobs/demo/web/contours_geojson").json()
     lon, lat = contours["features"][0]["geometry"]["coordinates"][0]
     assert 115 < lon < 116 and -33 < lat < -31
-    n_commands = len(c.get("/jobs/demo").json()["commands"])
+    assert len(c.get("/jobs/demo").json()["commands"]) == n_commands  # web views never touch the provenance log
 
     line = {"type": "LineString", "coordinates": [[lon, lat], [lon + 0.0003, lat + 0.0002]]}
     prof = sse(c.post("/jobs/demo/profile", json={"line": line, "step": 1.0}).text)
     assert prof[-1][0] == "done", prof[-1]
     assert c.get("/jobs/demo/profile_svg").status_code == 200
-    # web views never touch the provenance log; the profile step does
+    # … and the profile step does
     assert len(c.get("/jobs/demo").json()["commands"]) > n_commands
     # inputs are never written to: the whole run and every read left the input as it was
     assert (site.read_bytes(), site.stat().st_mtime_ns) == pinned

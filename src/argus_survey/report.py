@@ -18,7 +18,7 @@ from typing import Any
 
 from argus_survey import __version__
 from argus_survey.jobs import Job
-from argus_survey.models import CommandRecord, SurveyError, VolumeReport, utcnow
+from argus_survey.models import ChangeReport, CommandRecord, JobSidecar, SurveyError, VolumeReport, utcnow
 from argus_survey.tools import run
 
 STEP = "report"
@@ -508,6 +508,19 @@ def dod_ramp(lod_m: float) -> tuple[list[tuple[float, tuple[int, int, int]]], fl
     return [(-sat, (33, 102, 172)), *inner, (0.0, (247, 247, 247)), *outer, (sat, (178, 24, 43))], sat
 
 
+def dod_lod_kind(s: JobSidecar, c: ChangeReport) -> str | None:
+    """The DoD-beyond-LoD product to draw for change *c*, or None when it has none of its own.
+
+    The generic ``dod_lod`` is the latest comparison's raster, whatever its surface: it stands in only for
+    that comparison (and for older sidecars, which keep nothing else), never under another surface's heading.
+    """
+    own = f"dod_{c.surface}_lod"
+    if own in s.products:
+        return own
+    latest = s.change.surface if s.change else (s.changes[-1].surface if s.changes else c.surface)
+    return "dod_lod" if c.surface == latest else None
+
+
 def section_volumes(job: Job) -> str:
     s = job.sidecar
     out: list[str] = []
@@ -546,11 +559,11 @@ def section_volumes(job: Job) -> str:
                 ]
             )
         )
-        lod_kind = f"dod_{c.surface}_lod" if f"dod_{c.surface}_lod" in s.products else "dod_lod"
+        lod_kind = dod_lod_kind(s, c)
         ramp, sat = dod_ramp(c.lod_m)
         out.append(
             figure(
-                thumbnail(job, lod_kind, color=ramp),
+                thumbnail(job, lod_kind, color=ramp) if lod_kind else None,
                 "DoD beyond the LoD: red = gain, blue = loss, white = no detectable change "
                 f"(colours saturate at ±{sat:g} m)",
             )

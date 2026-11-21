@@ -121,7 +121,7 @@ def group_stats(
             excluded=excluded,
             mean_m=None,
             std_m=None,
-            rmse_data_m=None,  # type: ignore[arg-type]
+            rmse_data_m=None,
             rmse_m=None,
             max_abs_m=None,
             meets_minimum_count=False,
@@ -214,6 +214,11 @@ def statement_for(g: AccuracyGroup, target_class_cm: float | None, *, nva_meets:
     )
 
 
+# cct prints every column with this many decimals. The job CRS may be geographic: 6 decimals of a degree is
+# ~0.1 m, the size of the errors being tested; 10 is ~0.01 mm (and still exact for metres in a float).
+CCT_DECIMALS = 10
+
+
 def transform_points(
     job: Job, pts: list[dict[str, str]], checks_crs: str
 ) -> tuple[list[tuple[float, float, float]], TransformOp | None]:
@@ -239,7 +244,7 @@ def transform_points(
     op = crs_mod.select_operation(src.definition, job_crs.definition, bbox_lonlat=bbox, sink=job.sink, step=STEP)
     pipeline = crs_mod.pdal_coord_op(op, src, job_crs)
     stdin = "".join(f"{x!r} {y!r} {z!r}\n" for x, y, z in coords)
-    out = run(["cct", "-d", "6", *pipeline.split()], step=STEP, sink=job.sink, stdin=stdin).stdout
+    out = run(["cct", "-d", str(CCT_DECIMALS), *pipeline.split()], step=STEP, sink=job.sink, stdin=stdin).stdout
     moved: list[tuple[float, float, float]] = []
     for line in out.splitlines():
         parts = line.split()

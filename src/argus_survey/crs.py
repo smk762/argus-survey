@@ -36,15 +36,40 @@ _SUMMARY = re.compile(r"^(?P<id>[^,]+), (?P<name>.+?), (?P<acc>\d+(?:\.\d+)? m|u
 _GRIDS = re.compile(r"\+grids=(\S+)")
 
 
+# The only spellings of a CRS we pass on (see check_definition): an authority code, optionally compound
+# ("EPSG:7850+5711", "EPSG:7850+EPSG:5711"); an OGC URN; WKT; PROJJSON; a PROJ string.
+_AUTH_CODE = re.compile(r"[A-Za-z][A-Za-z0-9_]*:[A-Za-z0-9_.-]+(\+([A-Za-z][A-Za-z0-9_]*:)?[A-Za-z0-9_.-]+)?")
+_URN = re.compile(r"urn:(x-)?ogc:def:[A-Za-z]+[:,][A-Za-z0-9:,._-]+", re.IGNORECASE)
+_WKT = re.compile(
+    r"(PROJCRS|PROJECTEDCRS|PROJCS|GEOGCRS|GEOGRAPHICCRS|GEOGCS|GEODCRS|GEODETICCRS|GEOCCS|COMPOUNDCRS|COMPD_CS"
+    r"|VERTCRS|VERTICALCRS|VERT_CS|BOUNDCRS|ENGCRS|ENGINEERINGCRS|LOCAL_CS|DERIVEDPROJCRS|COORDINATEMETADATA)\s*\[",
+    re.IGNORECASE,
+)
+_INIT = re.compile(r"\+init=(\S*)")
+_INIT_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9_]*:[A-Za-z0-9_.-]+")
+
+
 def check_definition(definition: str) -> str:
-    """Refuse a CRS definition that PROJ/GDAL tools would read as an option or a file, not a CRS.
+    """Refuse anything that is not spelled like a CRS, so a tool can't read it as an option, a file or a URL.
 
     Definitions reach ``projinfo``/``gdaltransform`` argv from users (CLI and API). A leading ``-``
-    would be parsed as an option (``--searchpaths``, ``-s``), and ``projinfo`` reads ``@path`` as
-    "load the definition from this file" — a local file read. Neither is a CRS: EPSG codes, WKT,
-    PROJJSON and ``+proj=`` strings never start with either.
+    would be parsed as an option (``--searchpaths``, ``-s``); ``projinfo`` reads ``@path`` as "load
+    the definition from this file"; and GDAL (``OSRSetFromUserInput``) opens anything it doesn't
+    recognise as a file and fetches ``http(s)://`` URLs — a local file read or an outbound request.
+    So this is an allowlist: an authority code, an OGC URN, WKT, PROJJSON or a PROJ string, and
+    nothing else. ``+init=`` may only name ``authority:code`` (PROJ reads ``+init=path:key`` as a file).
     """
-    if definition.lstrip().startswith(("-", "@")):
+    text = definition.strip()
+    ok = (
+        _AUTH_CODE.fullmatch(text) is not None
+        or _URN.fullmatch(text) is not None
+        or _WKT.match(text) is not None
+        or text.startswith("{")
+        or text.startswith(("+proj=", "+init="))
+    )
+    if text.startswith("+") and not all(_INIT_VALUE.fullmatch(v) for v in _INIT.findall(text)):
+        ok = False
+    if not ok:
         raise SurveyError(
             f"{definition!r} is not a CRS definition; give an EPSG code (EPSG:7850+5711), WKT, PROJJSON or a PROJ string"
         )
@@ -105,16 +130,18 @@ def select_operation(
 ) -> TransformOp:
     """Pick the coordinate operation from *source* to *target* (any PROJ CRS definition).
 
-    *bbox_lonlat* (west, south, east, north) restricts candidates to those valid over the data.
+    *bbox_lonlat* (west, south, east, north) restricts candidates to those valid over the whole of the
+    data (``--spatial-test contains``): an operation whose area of use only overlaps the extent would
+    rank by its accuracy and then fail, or be wrong, for the points outside it.
     *prefer* is a case-insensitive substring of an operation name (e.g. ``"GDA94 to GDA2020 (2)"``)
     to pin a specific candidate; otherwise PROJ's ranking is used, skipping candidates whose grids
     are absent. Ballpark operations are never candidates.
     """
     check_definition(source)
     check_definition(target)
-    argv = ["projinfo", "-s", source, "-t", target, "--spatial-test", "intersects", "--hide-ballpark", "-o", "PROJ"]
+    argv = ["projinfo", "-s", source, "-t", target, "--hide-ballpark", "-o", "PROJ"]
     if bbox_lonlat is not None:
-        argv += ["--bbox", ",".join(f"{v:.6f}" for v in bbox_lonlat)]
+        argv += ["--spatial-test", "contains", "--bbox", ",".join(f"{v:.6f}" for v in bbox_lonlat)]
     parsed = parse_projinfo_operations(run(argv, step=step, sink=sink).stdout)
     if not parsed:
         raise SurveyError(
@@ -134,9 +161,10 @@ def select_operation(
     ]
     usable = [i for i, c in enumerate(candidates) if not c.missing_grids]
     if prefer is not None:
-        matches = [i for i, c in enumerate(candidates) if prefer.lower() in c.name.lower()]
+        key = prefer.strip().lower()
+        matches = [i for i, c in enumerate(candidates) if key in c.name.lower()]
         # an operation named in full is the user's pin: never swap it for another match when its grids are absent
-        exact = [i for i in matches if candidates[i].name.lower() == prefer.strip().lower()]
+        exact = [i for i in matches if candidates[i].name.lower() == key]
         if exact:
             matches = exact
         if not matches:
@@ -397,7 +425,10 @@ def lonlat_bbox(
     for line in out.splitlines():
         parts = line.split()
         if len(parts) >= 2:
-            lon, lat = float(parts[0]), float(parts[1])
+            try:
+                lon, lat = float(parts[0]), float(parts[1])
+            except ValueError:  # a point outside the CRS's domain: gdaltransform prints words, not numbers
+                continue
             if math.isfinite(lon) and math.isfinite(lat):
                 lons.append(lon)
                 lats.append(lat)

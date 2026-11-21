@@ -166,14 +166,18 @@ def horizontal_definition(definition: str) -> str:
     wrapper = None
     if pj.get("type") == "CoordinateMetadata":  # a CRS at a coordinate epoch: keep the epoch on the 2D CRS
         wrapper, pj = pj, pj.get("crs") or {}
+    # A BoundCRS carries a datum shift (+towgs84, a grid). It is looked through only to find the horizontal
+    # component; the 2D CRS keeps the shift, or reprojecting a 2D product would fall back to a ballpark one.
+    bound = None
     if pj.get("type") == "BoundCRS":
-        pj = pj.get("source_crs") or {}
+        bound, pj = pj, pj.get("source_crs") or {}
     if pj.get("type") != "CompoundCRS":
         return definition
     for comp in pj.get("components", []):
-        if comp.get("type") == "BoundCRS":
-            comp = comp.get("source_crs") or {}
-        if comp.get("type") not in {None, "VerticalCRS"}:
+        inner = (comp.get("source_crs") or {}) if comp.get("type") == "BoundCRS" else comp
+        if inner.get("type") not in {None, "VerticalCRS"}:
+            if bound is not None and comp is inner:  # bound around the compound: re-bind the horizontal part
+                comp = {**bound, "source_crs": comp}
             return json.dumps(comp if wrapper is None else {**wrapper, "crs": comp}, separators=(",", ":"))
     return definition
 
@@ -209,6 +213,25 @@ def rasterize_coverage(job: Job, boundary: Path, grid: GridSpec, out: Path, *, s
     # gdal_rasterize can't stamp a compound CRS (it keeps the horizontal part); set the full one afterwards
     rasters.set_crs(out, raster_srs(job), sink=job.sink, step=step)
     return out
+
+
+def gap_rule(min_density: float | None, p50: float) -> tuple[float, str, str]:
+    """(threshold pts/m², comparison, wording) for a gap cell: one whose density is ``<`` (or ``<=``) the threshold.
+
+    Without ``--min-density`` the threshold is a fraction of the median. When at least half the covered
+    cells are empty the median is 0, and "below 0" would match nothing — no gaps reported for the
+    sparsest data there is. The empty cells are the gaps then (``<= 0``).
+    """
+    if min_density is not None:
+        return min_density, "<", f"--min-density {min_density} pts/m²"
+    threshold = GAP_FRACTION_OF_MEDIAN * p50
+    if threshold > 0:
+        return threshold, "<", f"{GAP_FRACTION_OF_MEDIAN:.0%} of the median density ({p50:.2f} pts/m²)"
+    return 0.0, "<=", "cells with no points (the median density is 0 pts/m²: at least half the covered cells are empty)"
+
+
+def is_gap(density: float, threshold: float, below: str) -> bool:
+    return density <= threshold if below == "<=" else density < threshold
 
 
 def qa(job: Job, *, density_res: float = 1.0, min_density: float | None = None, workers: int | None = None) -> QaReport:
@@ -287,15 +310,11 @@ def qa(job: Job, *, density_res: float = 1.0, min_density: float | None = None, 
             covered_cells=len(covered),
         )
 
-        if min_density is not None:
-            threshold, rule = min_density, f"--min-density {min_density} pts/m²"
-        else:
-            threshold = GAP_FRACTION_OF_MEDIAN * p50
-            rule = f"{GAP_FRACTION_OF_MEDIAN:.0%} of the median density ({p50:.2f} pts/m²)"
-        gap_cells = sum(1 for v in covered if v < threshold)
+        threshold, below, rule = gap_rule(min_density, p50)
+        gap_cells = sum(1 for v in covered if is_gap(v, threshold, below))
         gaps_mask = rasters.calc(
             job.path("gaps_mask.tif"),
-            f"isnodata(A) ? 0 : (A < {threshold!r} ? 1 : 0)",
+            f"isnodata(A) ? 0 : (A {below} {threshold!r} ? 1 : 0)",
             {"A": density_tif},
             sink=sink,
             step=STEP,

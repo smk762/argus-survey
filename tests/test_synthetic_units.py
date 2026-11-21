@@ -30,3 +30,18 @@ def test_under_canopy_return_on_a_stockpile_is_labelled_stockpile() -> None:
     for r in crowns:  # a crown stands on the pile, above it
         x, y = r[0] - e0, r[1] - n0
         assert r[2] > scene.surface_z(x, y) + 3.0
+
+
+def test_vegetated_check_points_keep_clear_of_the_pile_building_and_edges() -> None:
+    """Trees beside the building, on the pile's flank and at the border: their check points still obey the exclusions."""
+    scene = Scene(trees=(Tree(49.0, 40.0, 3.0, 8.0), Tree(29.5, 30.0, 3.0, 8.0), Tree(2.0, 2.0, 3.0, 8.0)))
+    e0, n0 = scene.origin
+    veg = [c for c in synthetic.check_points(scene, n_open=0, n_vegetated=60) if c.description == "vegetated"]
+    assert veg
+    for c in veg:
+        x, y = c.x - e0, c.y - n0
+        assert not scene.in_building(x, y) and not synthetic._near_building(scene, x, y), c
+        assert not synthetic._near_cone(scene, x, y), c
+        assert 3 <= x <= scene.width - 3 and 3 <= y <= scene.height - 3, c
+    buried = Scene(trees=(Tree(55.0, 40.0, 1.0, 8.0),))  # wholly over the building: no usable ground, no point
+    assert synthetic.check_points(buried, n_open=0, n_vegetated=5) == []

@@ -141,3 +141,23 @@ def test_gdal_algorithm_probe_never_raises(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(tools.subprocess, "run", broken)
     assert tools._gdal_algorithm_ok("calc") is False
+
+
+def test_a_missing_working_directory_is_not_reported_as_a_missing_tool(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    records: list[CommandRecord] = []
+    with pytest.raises(tools.ToolError, match="working directory") as info:
+        tools.run([sys.executable, "-c", "pass"], step="t", sink=records.append, cwd=tmp_path / "gone")
+    assert not isinstance(info.value, tools.ToolMissing) and info.value.returncode == tools.RC_NOT_RUN
+    assert [r.returncode for r in records] == [tools.RC_NOT_RUN]
+
+
+def test_a_tool_that_cannot_be_started_is_still_recorded(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Every launch failure reaches the sink, not only "not found": here a file that is not executable."""
+    script = tmp_path / "not-executable"
+    script.write_text("#!/bin/sh\n")
+    script.chmod(0o644)
+    records: list[CommandRecord] = []
+    with pytest.raises(tools.ToolError, match="could not be started") as info:
+        tools.run([str(script)], step="t", sink=records.append)
+    assert info.value.returncode == tools.RC_NOT_RUN
+    assert [(r.tool, r.returncode) for r in records] == [("not-executable", tools.RC_NOT_RUN)]

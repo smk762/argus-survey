@@ -98,6 +98,7 @@ OPTIONAL_GRIDS: tuple[str, ...] = (
 # sidecar's command log shows them as failures. Shell conventions: 124 = timed out (GNU timeout), 127 = not found.
 RC_TIMEOUT = 124
 RC_REFUSED = 125  # exited 0, but stderr carried a *fatal_stderr* pattern
+RC_NOT_RUN = 126  # found but could not be started (not executable, no working directory, …)
 RC_MISSING = 127
 
 
@@ -140,8 +141,8 @@ def run(
 
     *fatal_stderr*: substrings that make a zero exit a failure. PDAL, for one, logs per-point
     reprojection errors and still exits 0 — a silent datum failure we refuse to accept. Such a
-    refusal is recorded with ``returncode`` :data:`RC_REFUSED`; a timeout with :data:`RC_TIMEOUT`
-    and a missing executable with :data:`RC_MISSING`.
+    refusal is recorded with ``returncode`` :data:`RC_REFUSED`; a timeout with :data:`RC_TIMEOUT`,
+    a missing executable with :data:`RC_MISSING` and any other failure to start with :data:`RC_NOT_RUN`.
     """
     argv = [str(a) for a in argv]
     started_at = utcnow()
@@ -174,9 +175,18 @@ def run(
             cwd=cwd,
             check=False,
         )
-    except FileNotFoundError as exc:
-        record(RC_MISSING)
-        raise ToolMissing(f"{argv[0]} is not on PATH — run `argus-survey doctor`") from exc
+    except OSError as exc:
+        # FileNotFoundError is also what a missing *cwd* raises: don't send the operator to the toolchain for that
+        if isinstance(exc, FileNotFoundError) and (cwd is None or Path(cwd).is_dir()):
+            record(RC_MISSING)
+            raise ToolMissing(f"{argv[0]} is not on PATH — run `argus-survey doctor`") from exc
+        record(RC_NOT_RUN)
+        if cwd is not None and not Path(cwd).is_dir():
+            reason = f"the working directory {cwd} does not exist or is not a directory"
+        else:
+            reason = f"could not be started: {exc.strerror or exc}"
+        log.warning("tool.not_run", step=step, argv=argv, reason=reason)
+        raise ToolError(argv, RC_NOT_RUN, reason) from exc
     except subprocess.TimeoutExpired as exc:
         record(RC_TIMEOUT)
         stderr = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")

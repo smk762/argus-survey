@@ -127,3 +127,37 @@ def test_parts_that_miss_points_are_refused_before_the_merge(tmp_path: Path, mon
         )
     assert merged == [tmp_path / "o.laz"]  # no merge after the refusal
     assert not job.path(".ground-parts").exists()
+
+
+def test_a_failed_tile_stops_the_tiles_not_yet_started(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from argus_survey.jobs import JobStore
+    from argus_survey.models import SurveyError
+
+    job = JobStore(tmp_path).open("t", create=True)
+    plan = tiling.plan(
+        Bounds3D(minx=0, miny=0, minz=0, maxx=100, maxy=100, maxz=1), 10_000, buffer=5.0, target_points=300
+    )
+    assert len(plan.tiles) >= 9
+    started: list[str] = []
+
+    def failing_pipeline(stages, **_kw):  # type: ignore[no-untyped-def]
+        started.append(stages[-1]["filename"])
+        raise SurveyError("tile failed")
+
+    monkeypatch.setattr(tiling, "pdal_pipeline", failing_pipeline)
+    parts = tmp_path / "parts"
+    with pytest.raises(SurveyError, match="tile failed"):
+        tiling.run_tiles(
+            job,
+            tmp_path / "s.copc.laz",
+            plan,
+            lambda _t: [],
+            step="ground",
+            out=None,
+            expected_count=0,
+            workers=1,
+            parts_dir=parts,
+        )
+    # the worker may pick up one more tile before the cancel lands, never the whole plan
+    assert len(started) <= 2 < len(plan.tiles)
+    assert not parts.exists()
