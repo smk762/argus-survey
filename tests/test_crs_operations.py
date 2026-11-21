@@ -81,3 +81,46 @@ def test_pinned_substring_takes_the_first_match_whose_grids_are_on_disk(monkeypa
     # an operation named in full is pinned: refused when its grid is absent, never swapped for another match
     with pytest.raises(SurveyError, match="'A to B \\(1\\)' needs grid"):
         crs.select_operation("EPSG:1", "EPSG:2", prefer="A to B (1)")
+
+
+def _two_ops(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    from types import SimpleNamespace
+
+    text = "".join(
+        f"Operation No. {n}:\n\nunknown id, A to B ({n}), 0.05 m, World\n\nPROJ string:\n"
+        f"+proj=pipeline +step +proj=hgridshift +grids=g{n}.tif\n\n"
+        for n in (1, 2)
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(crs, "run", lambda argv, **k: calls.append(list(argv)) or SimpleNamespace(stdout=text))
+    monkeypatch.setattr(crs, "find_grid", lambda g: Path(g))
+    return calls
+
+
+def test_candidates_must_cover_the_whole_extent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With a bbox, projinfo is asked for operations whose area of use contains it, not ones that only overlap."""
+    calls = _two_ops(monkeypatch)
+    crs.select_operation("EPSG:1", "EPSG:2", bbox_lonlat=(115.8, -32.0, 115.9, -31.9))
+    argv = calls[0]
+    assert argv[argv.index("--spatial-test") + 1] == "contains" and "intersects" not in argv
+    assert argv[argv.index("--bbox") + 1] == "115.800000,-32.000000,115.900000,-31.900000"
+
+
+def test_a_pin_with_surrounding_whitespace_still_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+    _two_ops(monkeypatch)
+    assert crs.select_operation("EPSG:1", "EPSG:2", prefer=" A to B (2) ").name == "A to B (2)"
+    assert crs.select_operation("EPSG:1", "EPSG:2", prefer="(2)\n").name == "A to B (2)"
+
+
+def test_lonlat_bbox_skips_points_gdaltransform_could_not_transform(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from argus_survey.models import Bounds3D
+
+    out = "115.8 -32.0\ntransformation failed.\n115.9 -31.9\ninf inf\n"
+    monkeypatch.setattr(crs, "run", lambda *a, **k: SimpleNamespace(stdout=out))
+    b = Bounds3D(minx=0, miny=0, minz=0, maxx=10, maxy=10, maxz=1)
+    assert crs.lonlat_bbox("EPSG:7850", b) == (115.8, -32.0, 115.9, -31.9)
+    monkeypatch.setattr(crs, "run", lambda *a, **k: SimpleNamespace(stdout="transformation failed.\n" * 9))
+    with pytest.raises(SurveyError, match="could not place the data's extent"):
+        crs.lonlat_bbox("EPSG:7850", b)

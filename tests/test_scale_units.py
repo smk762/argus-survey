@@ -108,3 +108,21 @@ def test_scale_factors_names_a_point_proj_cannot_invert(monkeypatch: pytest.Monk
     b = Bounds3D(minx=0, miny=0, minz=0, maxx=10, maxy=10, maxz=1)
     with pytest.raises(SurveyError, match=r"can't invert \(0\.000, 0\.000\).*MGA2020 zone 50"):
         scale.scale_factors(crs, b, 0.0)
+
+
+@pytest.mark.parametrize("blocks", [4, 0])
+def test_scale_factors_refuses_when_proj_v_skips_a_point(monkeypatch: pytest.MonkeyPatch, blocks: int) -> None:
+    """Five points go to proj -V; fewer answers must not be reported as the extent's range (or raise IndexError)."""
+    from types import SimpleNamespace
+
+    from argus_survey import scale
+    from argus_survey.models import Bounds3D, CrsRecord
+
+    block = "Meridian scale (h) : 0.9996\nParallel scale (k) : 0.9996\nConvergence : 0d37'9.1\" [ 0.619 ]\n"
+    outputs = iter(["115.0 -32.0\n" * 5, block * blocks or "Meridian scale (h) : nope\n"])
+    monkeypatch.setattr(scale, "horizontal_projjson", lambda *a, **k: {})
+    monkeypatch.setattr(scale, "_proj_args", lambda *a, **k: ["+proj=utm", "+zone=50", "+south"])
+    monkeypatch.setattr(scale, "run", lambda *a, **k: SimpleNamespace(stdout=next(outputs)))
+    crs = CrsRecord.model_construct(definition="EPSG:7850", name="MGA2020 zone 50")
+    with pytest.raises(SurveyError, match="scale factor"):
+        scale.scale_factors(crs, Bounds3D(minx=0, miny=0, minz=0, maxx=10, maxy=10, maxz=1), 0.0)

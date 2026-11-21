@@ -236,6 +236,9 @@ class CheckPoint:
     description: str  # "open" (NVA) or "vegetated" (VVA)
 
 
+VEGETATED_TRIES = 200  # resamples of a vegetated check point that lands on the pile, the building or an edge
+
+
 def check_points(
     scene: Scene, *, n_open: int = 30, n_vegetated: int = 10, seed: int = 99, z_noise: float = 0.0
 ) -> list[CheckPoint]:
@@ -265,9 +268,20 @@ def check_points(
         )
     for k in range(n_vegetated if scene.trees else 0):
         t = scene.trees[k % len(scene.trees)]
-        ang = rnd.uniform(0, 2 * math.pi)
-        r = rnd.uniform(0, t.crown_radius * 0.6)
-        x, y = t.x + r * math.cos(ang), t.y + r * math.sin(ang)
+        # the same exclusions as the open points; a tree with no clear ground under it gives no check point
+        for _ in range(VEGETATED_TRIES):
+            ang = rnd.uniform(0, 2 * math.pi)
+            r = rnd.uniform(0, t.crown_radius * 0.6)
+            x, y = t.x + r * math.cos(ang), t.y + r * math.sin(ang)
+            if not (
+                scene.in_building(x, y)
+                or _near_cone(scene, x, y)
+                or _near_building(scene, x, y)
+                or not (3 <= x <= scene.width - 3 and 3 <= y <= scene.height - 3)
+            ):
+                break
+        else:
+            continue
         out.append(
             CheckPoint(
                 f"CP{len(out) + 1:03d}",

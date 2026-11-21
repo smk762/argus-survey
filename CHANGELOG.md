@@ -9,6 +9,16 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - **`run` honours `force`:** `POST /jobs/{id}/run` accepted `"force": true` but dropped it, so re-running an ingested job was refused ("already ingested") and Sightline's redo from the capture panel never worked. `argus-survey run` gains `--force` to match `ingest`.
 
+### Fixed (ai-code-auditor: 20 findings)
+- **Safety:** a CRS definition must be spelled like one: an authority code (`EPSG:7850+5711`), an OGC URN, WKT, PROJJSON or a PROJ string. GDAL opens anything else as a file and fetches `http(s)://` URLs, so a path or URL given as a CRS was a local file read or an outbound request; `+init=` may only name `authority:code`. CRS *names* (`"GDA2020 / MGA zone 50"`) are no longer accepted.
+- **Datums:** with the data's extent known, operation candidates must be valid over the whole of it (`projinfo --spatial-test contains`, was `intersects`). `--operation` ignores surrounding whitespace. A point `gdaltransform` can't place no longer aborts the extent lookup. The 2D CRS taken from a compound PROJJSON keeps a `BoundCRS`'s datum shift. Scale factors refuse when `proj -V` answers for fewer points than it was given.
+- **Accuracy:** check points transformed into a geographic job CRS keep 10 decimals (6 was ~0.1 m of latitude).
+- **QA gaps:** when at least half the covered cells are empty the median density is 0 and no gaps were reported; the empty cells are now the gaps, and the rule says so.
+- **Profile:** a sample with a void on both sides is drawn as a marker instead of vanishing; ticks stay distinct for very small ranges.
+- **Report:** a change's DoD figure is never another surface's raster (the generic `dod_lod` stands in only for the latest comparison).
+- **Runner:** a command that could not be started (not executable, missing working directory) is recorded with exit 126 and no longer reported as a tool missing from PATH. A failed tile cancels the tiles not yet started.
+- Synthetic vegetated check points obey the same exclusions as open ones. The Dockerfile guard reads continued `RUN` lines and every pip spelling; the shell-quoting test goes through a real shell; the web-view test checks the command log is untouched.
+
 ## [0.2.0] - 2026-11-19
 
 ### Fixed (ai-code-auditor sweep: 73 findings fixed, 12 closed as not applicable)

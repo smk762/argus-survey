@@ -159,7 +159,26 @@ def test_coordinate_epoch_is_unwrapped_and_kept() -> None:
     assert crs.record_from_projjson(pj).epoch is None
 
 
-@pytest.mark.parametrize("bad", ["--searchpaths", "-s", " -o", "@/etc/passwd", "@job.json"])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "--searchpaths",
+        "-s",
+        " -o",
+        "@/etc/passwd",
+        "@job.json",
+        # GDAL (gdaltransform -s_srs) opens what it doesn't recognise as a file, and fetches URLs
+        "/etc/passwd",
+        "../../secrets/site.prj",
+        "/proc/self/environ",
+        "site.prj",
+        "http://169.254.169.254/latest/meta-data",
+        "https://example.com/crs.wkt",
+        "+init=/etc/passwd:x",
+        "+proj=utm +zone=50 +init=../epsg:7850",
+        "",
+    ],
+)
 def test_option_or_file_definitions_are_refused(bad: str) -> None:
     with pytest.raises(SurveyError, match="not a CRS definition"):
         crs.describe(bad)
@@ -169,7 +188,23 @@ def test_option_or_file_definitions_are_refused(bad: str) -> None:
         crs.promote_3d(bad)
 
 
-@pytest.mark.parametrize("ok", ["EPSG:7850+5711", "+proj=utm +zone=50 +south", '{"type": "ProjectedCRS"}', "PROJCRS[]"])
+@pytest.mark.parametrize(
+    "ok",
+    [
+        "EPSG:7850+5711",
+        "EPSG:7850+EPSG:5711",
+        "epsg:7850",
+        "OGC:CRS84",
+        "IGNF:LAMB93",
+        "urn:ogc:def:crs:EPSG::7850",
+        "+proj=utm +zone=50 +south",
+        "+init=epsg:7850",
+        '{"type": "ProjectedCRS"}',
+        "PROJCRS[]",
+        'COMPD_CS["GDA94 / MGA zone 50 + AHD height",PROJCS["a/b"],VERT_CS["AHD height"]]',
+        ' GEOGCRS["GDA2020",\n  DATUM["x"]]',
+    ],
+)
 def test_real_definitions_pass_the_check(ok: str) -> None:
     assert crs.check_definition(ok) == ok
 

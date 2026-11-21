@@ -19,7 +19,7 @@ import math
 import os
 import shutil
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -190,8 +190,18 @@ def run_tiles(
         return pdal_pipeline(stages, step=step, sink=job.sink)
 
     try:
-        with ThreadPoolExecutor(max_workers=workers or default_workers()) as pool:
-            metas = list(pool.map(one, tile_plan.tiles))
+        # One bad tile (or Ctrl-C) stops the plan: tiles not yet started are cancelled rather than run to
+        # completion into a parts directory that is about to be deleted.
+        pool = ThreadPoolExecutor(max_workers=workers or default_workers())
+        try:
+            futures = [pool.submit(one, tile) for tile in tile_plan.tiles]
+            wait(futures, return_when=FIRST_EXCEPTION)
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
+        failed = next((f.exception() for f in futures if not f.cancelled() and f.exception() is not None), None)
+        if failed is not None:
+            raise failed
+        metas = [f.result() for f in futures]
         if out is not None or keep:
             parts = sorted(parts_dir.glob("*.laz"))
             total = 0

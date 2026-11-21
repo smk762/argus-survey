@@ -226,3 +226,50 @@ def test_ground_filter_params_refused_without_a_job() -> None:
         filter_params("pmf")
     with pytest.raises(SurveyError, match="only, not csf"):
         filter_params("csf", preset="stockpile")
+
+
+def test_an_empty_group_has_no_statistics() -> None:
+    """No usable residuals (every VVA point outside coverage, say): every statistic is None and it still validates."""
+    from argus_survey.models import AccuracyGroup
+
+    g = group_stats([_r(None, "VVA"), _r(0.01, "NVA")], "VVA", checkpoint_rmse=0.01)
+    assert (g.n, g.excluded) == (0, 1) and g.rmse_data_m is None and g.rmse_m is None and g.mean_m is None
+    assert AccuracyGroup.model_validate(g.model_dump()) == g
+
+
+def test_ticks_stay_distinct_at_any_magnitude() -> None:
+    for lo, hi in ((1e-12, 2e-12), (0.0, 3e-11), (5.0, 5.4), (0.0, 1e9)):
+        ticks = nice_ticks(lo, hi)
+        assert len(ticks) >= 3 and len(set(ticks)) == len(ticks), (lo, hi, ticks)
+    assert nice_ticks(0.0, 1.0) == [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]  # still round numbers, no float noise
+
+
+def test_an_isolated_sample_is_drawn_as_a_marker() -> None:
+    """A valid height with a void on both sides has no line to belong to; it must not vanish from the plot."""
+    out = svg("t", [0.0, 1.0, 2.0, 3.0, 4.0], {"dtm": [None, 21.0, None, 22.0, None]}, "Height (m)")
+    assert out.count("<circle") == 2 and "<polyline" not in out
+    assert svg("t", [0.0], {"dtm": [21.0]}, "Height (m)").count("<circle") == 1  # a one-sample profile
+    joined = svg("t", [0.0, 1.0, 2.0], {"dtm": [21.0, 21.5, None]}, "Height (m)")
+    assert joined.count("<polyline") == 1 and "<circle" not in joined
+
+
+def test_check_points_keep_their_precision_into_a_geographic_job_crs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """cct's -d applies to every column: 6 decimals of a degree is ~0.1 m, the size of the errors under test."""
+    from types import SimpleNamespace
+
+    job = SimpleNamespace(sidecar=SimpleNamespace(crs=SimpleNamespace(definition="EPSG:7843")), sink=None)
+    src = SimpleNamespace(definition="EPSG:7850+5711", has_height_datum=True)
+    lon, lat, h = 115.8123456789, -31.9123456789, 12.345
+
+    def fake_cct(argv, **_kw):  # type: ignore[no-untyped-def]
+        d = int(argv[argv.index("-d") + 1])
+        return SimpleNamespace(stdout=f"{lon:.{d}f} {lat:.{d}f} {h:.{d}f} inf\n")
+
+    monkeypatch.setattr(accuracy.crs_mod, "describe", lambda *a, **k: src)
+    monkeypatch.setattr(accuracy.crs_mod, "same_crs", lambda *a, **k: False)
+    monkeypatch.setattr(accuracy.crs_mod, "lonlat_bbox", lambda *a, **k: (115.8, -32.0, 115.9, -31.9))
+    monkeypatch.setattr(accuracy.crs_mod, "select_operation", lambda *a, **k: object())
+    monkeypatch.setattr(accuracy.crs_mod, "pdal_coord_op", lambda *a, **k: "+proj=noop")
+    monkeypatch.setattr(accuracy, "run", fake_cct)
+    moved, _ = accuracy.transform_points(job, [{"x": "391000", "y": "6464000", "z": "12.345"}], "EPSG:7850+5711")
+    assert moved[0][0] == pytest.approx(lon, abs=1e-9) and moved[0][1] == pytest.approx(lat, abs=1e-9)  # < 0.2 mm
