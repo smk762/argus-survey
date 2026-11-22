@@ -132,7 +132,8 @@ def select_operation(
 
     *bbox_lonlat* (west, south, east, north) restricts candidates to those valid over the whole of the
     data (``--spatial-test contains``): an operation whose area of use only overlaps the extent would
-    rank by its accuracy and then fail, or be wrong, for the points outside it.
+    rank by its accuracy and then fail, or be wrong, for the points outside it. Without one (doctor),
+    any operation that applies somewhere in the CRSs' areas of use is a candidate.
     *prefer* is a case-insensitive substring of an operation name (e.g. ``"GDA94 to GDA2020 (2)"``)
     to pin a specific candidate; otherwise PROJ's ranking is used, skipping candidates whose grids
     are absent. Ballpark operations are never candidates.
@@ -142,6 +143,10 @@ def select_operation(
     argv = ["projinfo", "-s", source, "-t", target, "--hide-ballpark", "-o", "PROJ"]
     if bbox_lonlat is not None:
         argv += ["--spatial-test", "contains", "--bbox", ",".join(f"{v:.6f}" for v in bbox_lonlat)]
+    else:
+        # No extent to test: projinfo's default is `contains` against the CRSs' own areas of use, which drops
+        # every operation narrower than its CRS (NAD83(2011) → NAVD88 covers CONUS, not all of NAD83(2011)).
+        argv += ["--spatial-test", "intersects"]
     parsed = parse_projinfo_operations(run(argv, step=step, sink=sink).stdout)
     if not parsed:
         raise SurveyError(

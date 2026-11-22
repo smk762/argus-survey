@@ -103,6 +103,17 @@ def test_doctor_runs() -> None:
     assert not failing, failing
 
 
+@pytest.mark.tools
+def test_doctor_operations_pass_where_their_grid_is_installed() -> None:
+    """Optional ones too (#69): `doctor --strict` only gates the required checks, so nothing else sees them fail."""
+    for source, target, grid, _required in tools.DOCTOR_OPERATIONS:
+        if tools.find_grid(grid) is None:
+            continue
+        from argus_survey.crs import select_operation
+
+        assert grid in select_operation(source, target).grids, (source, target)
+
+
 def test_fatal_stderr_turns_exit_zero_into_failure() -> None:
     code = "import sys; sys.stderr.write('(filters.projpipeline Error) Coordinate to transform falls outside grid\\n')"
     records: list[CommandRecord] = []

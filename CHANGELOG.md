@@ -9,6 +9,9 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - **`run` honours `force`:** `POST /jobs/{id}/run` accepted `"force": true` but dropped it, so re-running an ingested job was refused ("already ingested") and Sightline's redo from the capture panel never worked. `argus-survey run` gains `--force` to match `ingest`.
 
+### Fixed
+- **`doctor` NAD83(2011) → NAVD88 check** (#69): with no extent, `select_operation` passed no spatial test, and projinfo's default (`contains`, against the CRSs' own areas of use) dropped the CONUS-only GEOID18 operation. It passes `intersects` again when there is no bbox; `contains` still applies to the data's extent.
+
 ### Fixed (ai-code-auditor: 20 findings)
 - **Safety:** a CRS definition must be spelled like one: an authority code (`EPSG:7850+5711`), an OGC URN, WKT, PROJJSON or a PROJ string. GDAL opens anything else as a file and fetches `http(s)://` URLs, so a path or URL given as a CRS was a local file read or an outbound request; `+init=` may only name `authority:code`. CRS *names* (`"GDA2020 / MGA zone 50"`) are no longer accepted.
 - **Datums:** with the data's extent known, operation candidates must be valid over the whole of it (`projinfo --spatial-test contains`, was `intersects`). `--operation` ignores surrounding whitespace. A point `gdaltransform` can't place no longer aborts the extent lookup. The 2D CRS taken from a compound PROJJSON keeps a `BoundCRS`'s datum shift. Scale factors refuse when `proj -V` answers for fewer points than it was given.
