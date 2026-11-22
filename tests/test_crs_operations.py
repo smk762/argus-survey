@@ -104,6 +104,11 @@ def test_candidates_must_cover_the_whole_extent(monkeypatch: pytest.MonkeyPatch)
     argv = calls[0]
     assert argv[argv.index("--spatial-test") + 1] == "contains" and "intersects" not in argv
     assert argv[argv.index("--bbox") + 1] == "115.800000,-32.000000,115.900000,-31.900000"
+    # without an extent the test is stated too: projinfo's default (contains, against the CRSs' own areas)
+    # drops operations narrower than their CRS, such as a regional geoid
+    crs.select_operation("EPSG:1", "EPSG:2")
+    argv = calls[1]
+    assert argv[argv.index("--spatial-test") + 1] == "intersects" and "--bbox" not in argv
 
 
 def test_a_pin_with_surrounding_whitespace_still_matches(monkeypatch: pytest.MonkeyPatch) -> None:
