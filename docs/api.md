@@ -28,7 +28,7 @@ Clients never send filesystem paths:
 
 | Route | Returns |
 |---|---|
-| `GET /health` | `HealthInfo`: `{status, service, version, read_only, tools}` |
+| `GET /health` | `HealthInfo`: `{status, service, version, read_only, tools}`, inside the Argus suite's `ServiceHealth` body (argus-cortex), which adds `service_version`, `started_at`, `wire` (`survey_version`, the `job.json` schema version), `capabilities`, `checks`, `build` and `peer`. `status` is always `ok` and the route always answers `200`: no dependency check is registered, and a missing tool shows as `null` in `tools` and in full at `GET /doctor`. Not listed in `/openapi.json` |
 | `GET /doctor` | the toolchain report, as `argus-survey doctor`, plus `ok` |
 | `GET /inputs` | `{points, vectors, rasters, tables}`: names under `SURVEY_DATA_DIR`, by file type |
 | `GET /jobs` | `{jobs: [JobDigest]}` |

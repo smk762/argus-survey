@@ -73,10 +73,36 @@ def test_ids_and_steps_validated(roots) -> None:  # type: ignore[no-untyped-def]
 
 
 def test_health_matches_its_model(roots) -> None:  # type: ignore[no-untyped-def]
+    from argus_survey import __version__
     from argus_survey.models import HealthInfo
 
     body = client(roots, False).get("/health").json()
-    assert HealthInfo.model_validate(body).service == "argus-survey"
+    # The fields clients were given (argus-sightline's generated HealthInfo) are all still there, unchanged.
+    info = HealthInfo.model_validate({name: body[name] for name in HealthInfo.model_fields})
+    assert info.service == "argus-survey" and info.status == "ok" and info.read_only is True
+    assert info.version == __version__
+    assert set(body["tools"]) == {"pdal", "gdal", "proj"}
+
+
+def test_health_is_the_suite_service_health(roots, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from argus_cortex.service import ServiceHealth
+
+    from argus_survey.models import SURVEY_VERSION
+
+    monkeypatch.setenv("ARGUS_PEER", "survey")
+    monkeypatch.delenv("ARGUS_BUILD", raising=False)
+    for allow in (False, True):
+        c = client(roots, allow)
+        r = c.get("/health")
+        assert r.status_code == 200
+        health = ServiceHealth.model_validate(r.json())
+        assert (health.service, health.status, health.peer) == ("argus-survey", "ok", "survey")
+        assert health.read_only is (not allow)
+        assert health.wire == {"survey_version": str(SURVEY_VERSION)}
+        assert health.checks == {} and health.build is None
+        # No dependency checks, so the cheap form container healthchecks use is the same body.
+        shallow = c.get("/health?checks=0")
+        assert shallow.status_code == 200 and shallow.json() == r.json()
 
 
 def test_volume_refuses_a_file_and_a_drawn_polygon_together(roots) -> None:  # type: ignore[no-untyped-def]
