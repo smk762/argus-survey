@@ -14,6 +14,9 @@ import pytest
 
 from argus_survey.tools import tools_available
 
+# Never read a developer's suite settings file (argus_cortex.settings) from a test.
+os.environ["ARGUS_ENV_FILE"] = "off"
+
 REQUIRE_TOOLS = os.environ.get("SURVEY_TEST_REQUIRE_TOOLS", "").strip() == "1"
 
 

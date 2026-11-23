@@ -39,14 +39,14 @@ wheels = [
 
 [[package]]
 name = "argus-cortex"
-version = "0.8.0"
+version = "0.16.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/3a/31193a0d5ea43aae655d52c803597ef60c5f94dd3934d65b84c1f636650a/argus_cortex-0.8.0.tar.gz", hash = "sha256:85c82d50219f3bf00e0d7dfe9838f4da86ceeefe2b0eca479a7b2a53a0003d9b", size = 183014, upload-time = "2026-11-16T15:38:05.96Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/90/5208440b57d9d0a1fa0ed06d9fc6e91ddb06cae4e740110f8c18e010befd/argus_cortex-0.16.1.tar.gz", hash = "sha256:e051a090f19e9a5920ae214430606c03dc7ee8d5c8ff09bb75987fe332165d35", size = 393467, upload-time = "2026-11-23T22:57:14.408Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/17/5c985db1566aba4a9f0b3a9d1704123e5c78a1377f6ec3e15f51e7fd3306/argus_cortex-0.8.0-py3-none-any.whl", hash = "sha256:d981ac7de96c5985f5b032dbc85981e4fcd54d1e3e227fc7ea3b15d540543d57", size = 107214, upload-time = "2026-11-16T15:38:04.604Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/1e/319842c04aa02c51e81961e5d663a7707a0b195149a632dcd40ee03ab8c6/argus_cortex-0.16.1-py3-none-any.whl", hash = "sha256:546a9220935730b82aee6a507c16786e640c5ebf0eb2bc1b87e60632838bb7be", size = 160061, upload-time = "2026-11-23T22:57:12.706Z" },
 ]
 
 [package.optional-dependencies]
@@ -80,8 +80,8 @@ server = [
 
 [package.metadata]
 requires-dist = [
-    { name = "argus-cortex", specifier = ">=0.8,<0.9" },
-    { name = "argus-cortex", extras = ["server"], marker = "extra == 'server'", specifier = ">=0.8,<0.9" },
+    { name = "argus-cortex", specifier = ">=0.16.1,<0.17" },
+    { name = "argus-cortex", extras = ["server"], marker = "extra == 'server'", specifier = ">=0.16.1,<0.17" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.110" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.7" },
     { name = "pydantic", specifier = ">=2.7" },

@@ -2,7 +2,8 @@
 
 Routes::
 
-    GET  /health                         {status, service, version, read_only, tools}
+    GET  /health                         argus-cortex's ServiceHealth: {status, service, version, read_only, tools}
+                                         plus service_version, started_at, wire, capabilities, checks, build, peer
     GET  /doctor                         the toolchain report
     GET  /inputs                         point clouds, vectors, rasters and CSVs under SURVEY_DATA_DIR (names only)
     GET  /jobs                           {jobs: [JobDigest]}
@@ -39,11 +40,13 @@ except ImportError as exc:  # pragma: no cover
     raise ImportError("Server requires: pip install argus-survey[server]") from exc
 
 from argus_cortex.server import WriteGuard
+from argus_cortex.service import install_health
 from pydantic import BaseModel
 
 from argus_survey import __version__, config
 from argus_survey.jobs import Job, JobStore, is_safe_id
 from argus_survey.models import (
+    SURVEY_VERSION,
     AccuracyBody,
     ChangeBody,
     ContoursBody,
@@ -150,9 +153,25 @@ def create_app(
         return data_path(name, label) if name else None
 
     # ── reads ──
-    @app.get("/health")
-    def health() -> dict[str, Any]:
-        return HealthInfo(version=__version__, read_only=not allow, tools=versions()).model_dump(mode="json")
+    # The suite's one health shape (argus_cortex.service.ServiceHealth). HealthInfo's five fields keep their names
+    # and values: status, service, version and read_only are the contract's own, and `tools` rides along as an
+    # extra. No dependency check is registered, so `status` stays "ok" (HealthInfo's only value) and the route
+    # answers 200 as before; a missing tool still shows as a null version in `tools`, and in full at /doctor.
+    async def health_extra() -> dict[str, Any]:
+        # versions() shells out on its first call (cached after): keep that off the event loop.
+        tools = await asyncio.to_thread(versions)
+        return HealthInfo(version=__version__, read_only=not allow, tools=tools).model_dump(
+            mode="json", include={"tools"}
+        )
+
+    install_health(
+        app,
+        service="argus-survey",
+        version=__version__,
+        wire={"survey_version": str(SURVEY_VERSION)},
+        read_only=not allow,
+        extra=health_extra,
+    )
 
     @app.get("/doctor")
     def doctor() -> dict[str, Any]:

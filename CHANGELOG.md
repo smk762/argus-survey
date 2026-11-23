@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **argus-cortex 0.8 → 0.16**, pinned `>=0.16.1,<0.17` (base dependency and the `server` extra). Nothing survey uses changed between them: `fs.safe_name`, `server.WriteGuard` and `wire.render_schema` behave as before, and the committed wire schema is byte-identical.
+- **`GET /health` is the Argus suite's `ServiceHealth`** (argus-cortex's `install_health`; argus-cortex#212). `status`, `service`, `version`, `read_only` and `tools` keep their names, values and meaning, so `HealthInfo`, the wire schema and `job.json` are unchanged. The body gains `service_version`, `started_at`, `wire` (`{"survey_version": "1"}`, the `job.json` schema version), `capabilities` (empty), `checks` (empty), `build` and `peer`. No dependency check is registered, so `status` is still always `ok` and the route always answers `200`. Two things a client could notice: the response carries `Cache-Control: no-store`, and `/health` is no longer listed in `/openapi.json`.
+
+### Added
+- The compose `serve` container carries the suite's discovery labels (`argus.peer: survey`, `argus.service: argus-survey`, `argus.health: /health`, `argus.port: "8107"`), which argus-iris's agents read, and `ARGUS_PEER=survey`, so `/health` reports `peer`. Its healthcheck asks `/health?checks=0`.
+
 ### Fixed
 - **`run` honours `force`:** `POST /jobs/{id}/run` accepted `"force": true` but dropped it, so re-running an ingested job was refused ("already ingested") and Sightline's redo from the capture panel never worked. `argus-survey run` gains `--force` to match `ingest`.
 
