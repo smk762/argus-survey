@@ -65,7 +65,8 @@ src/argus_survey/
   models.py      Pydantic v2 wire types. JobSidecar (job.json) is the API contract: inputs + SHA256,
                  CRS record, commands[], products{kind: path, sha256, …}, timings, reports. SURVEY_VERSION = schema version.
   config.py      SURVEY_* env knobs, process_allowed(), resolve_under_root().
-  tools.py       subprocess runner; pdal_pipeline(json) and gdal argv builders; versions(); doctor checks.
+  tools.py       subprocess runner; pdal_pipeline(json) and gdal argv builders; versions().
+  doctor.py      doctor: toolchain, datum grid and key-transformation checks.
   crs.py         read CRS from `pdal info --metadata` (horizontal + vertical, WKT2/PROJJSON), resolve EPSG,
                  compound CRS construction, geoid grid presence check (projinfo / PROJ_DATA), unit detection.
   jobs.py        JobStore (create, load, save sidecar, artifact paths), strict id charset.

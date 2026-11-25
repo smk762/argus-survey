@@ -175,7 +175,7 @@ def create_app(
 
     @app.get("/doctor")
     def doctor() -> dict[str, Any]:
-        from argus_survey.tools import doctor as run_doctor
+        from argus_survey.doctor import doctor as run_doctor
 
         report = run_doctor(verify_grid_digests=False)
         return {"ok": report.ok, **report.model_dump()}

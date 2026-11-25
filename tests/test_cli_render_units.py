@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from rich.console import Console
 
-from argus_survey import cli, tools
+from argus_survey import cli, doctor
 from argus_survey.models import CrsRecord, VolumeReport
 
 
@@ -63,7 +63,7 @@ def test_doctor_details_print_literally(console: Console, monkeypatch: pytest.Mo
         checks=[SimpleNamespace(name="grid [proj]", ok=False, required=True, detail="missing [/opt/geo] [/]")],
         ok=False,
     )
-    monkeypatch.setattr(tools, "doctor", lambda **_kw: report)
+    monkeypatch.setattr(doctor, "doctor", lambda **_kw: report)
     cli.doctor(as_json=False, strict=False, no_digests=True)
     text = console.export_text()
     assert "2.8 [x]" in text and "grid [proj]" in text and "missing [/opt/geo] [/]" in text
