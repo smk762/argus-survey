@@ -47,6 +47,16 @@ _WKT = re.compile(
 )
 _INIT = re.compile(r"\+init=(\S*)")
 _INIT_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9_]*:[A-Za-z0-9_.-]+")
+# PROJ parameters that open a file (or, with PROJ networking on, fetch a URL). Matched anywhere in the text,
+# so a PROJ string embedded in WKT (EXTENSION["PROJ4", "..."]) is held to the same rule.
+_FILE_PARAM = re.compile(r"\+(?:nadgrids|geoidgrids|grids|file)=([^\s\"\]]*)", re.IGNORECASE)
+_WKT_GRIDS = re.compile(r"PROJ4_GRIDS\"\s*,\s*\"([^\"]*)\"", re.IGNORECASE)
+# A bare grid name PROJ resolves through its own data directory or CDN: no path, no URL ('@' marks it optional).
+_GRID_NAME = re.compile(r"@?[A-Za-z0-9_][A-Za-z0-9_.-]*")
+
+
+def _grid_names_ok(value: str) -> bool:
+    return all(_GRID_NAME.fullmatch(g) is not None and ".." not in g for g in value.split(","))
 
 
 def check_definition(definition: str) -> str:
@@ -57,7 +67,9 @@ def check_definition(definition: str) -> str:
     the definition from this file"; and GDAL (``OSRSetFromUserInput``) opens anything it doesn't
     recognise as a file and fetches ``http(s)://`` URLs — a local file read or an outbound request.
     So this is an allowlist: an authority code, an OGC URN, WKT, PROJJSON or a PROJ string, and
-    nothing else. ``+init=`` may only name ``authority:code`` (PROJ reads ``+init=path:key`` as a file).
+    nothing else. ``+init=`` may only name ``authority:code`` (PROJ reads ``+init=path:key`` as a file),
+    and the grid parameters (``+nadgrids=``, ``+geoidgrids=``, ``+grids=``, ``+file=``, WKT's ``PROJ4_GRIDS``)
+    only bare grid names: PROJ opens a path there, or fetches a URL when its networking is on.
     """
     text = definition.strip()
     ok = (
@@ -67,7 +79,9 @@ def check_definition(definition: str) -> str:
         or text.startswith("{")
         or text.startswith(("+proj=", "+init="))
     )
-    if text.startswith("+") and not all(_INIT_VALUE.fullmatch(v) for v in _INIT.findall(text)):
+    if not all(_INIT_VALUE.fullmatch(v) for v in _INIT.findall(text)):
+        ok = False
+    if not all(_grid_names_ok(v) for v in (*_FILE_PARAM.findall(text), *_WKT_GRIDS.findall(text))):
         ok = False
     if not ok:
         raise SurveyError(

@@ -14,6 +14,8 @@ All notable changes to this project are documented here. The format follows
 - The compose `serve` container carries the suite's discovery labels (`argus.peer: survey`, `argus.service: argus-survey`, `argus.health: /health`, `argus.port: "8107"`), which argus-iris's agents read, and `ARGUS_PEER=survey`, so `/health` reports `peer`. Its healthcheck asks `/health?checks=0`.
 
 ### Fixed
+- **Safety:** the CRS allowlist checks every PROJ parameter that opens a file, not just `+init=`. `+nadgrids=`, `+geoidgrids=`, `+grids=` and `+file=` (in a PROJ string, or one embedded in WKT), and WKT's `PROJ4_GRIDS`, may only name bare grids (`@null`, `au_ga_AUSGeoid2020_20180201.tif`). A path or URL there was a local file open, or an outbound request with PROJ networking on.
+- The report's DoD-beyond-LoD figure falls back to the generic `dod_lod` only when the job has that product, instead of naming a raster that was never written.
 - **`run` honours `force`:** `POST /jobs/{id}/run` accepted `"force": true` but dropped it, so re-running an ingested job was refused ("already ingested") and Sightline's redo from the capture panel never worked. `argus-survey run` gains `--force` to match `ingest`.
 
 ### Fixed
