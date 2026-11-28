@@ -82,7 +82,7 @@ def doctor(
     no_digests: Annotated[bool, typer.Option("--no-digests", help="Skip re-hashing the datum grids")] = False,
 ) -> None:
     """Check PDAL/GDAL/PROJ: versions, drivers, datum grids, and the transformations surveyors rely on."""
-    from argus_survey.tools import doctor as run_doctor
+    from argus_survey.doctor import doctor as run_doctor
 
     report = run_doctor(verify_grid_digests=not no_digests)
     if as_json:

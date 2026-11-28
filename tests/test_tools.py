@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from argus_survey import tools
+from argus_survey import doctor, tools
 from argus_survey.models import CommandRecord
 
 
@@ -96,7 +96,7 @@ def test_pdal_pipeline_records_stages(tmp_path) -> None:  # type: ignore[no-unty
 
 @pytest.mark.tools
 def test_doctor_runs() -> None:
-    report = tools.doctor(verify_grid_digests=False)
+    report = doctor.doctor(verify_grid_digests=False)
     names = {c.name for c in report.checks}
     assert "exe:pdal" in names and "pdal:drivers" in names
     failing = [c for c in report.checks if c.name.startswith(("exe:", "pdal:", "gdal:", "version:")) and not c.ok]
@@ -106,7 +106,7 @@ def test_doctor_runs() -> None:
 @pytest.mark.tools
 def test_doctor_operations_pass_where_their_grid_is_installed() -> None:
     """Optional ones too (#69): `doctor --strict` only gates the required checks, so nothing else sees them fail."""
-    for source, target, grid, _required in tools.DOCTOR_OPERATIONS:
+    for source, target, grid, _required in doctor.DOCTOR_OPERATIONS:
         if tools.find_grid(grid) is None:
             continue
         from argus_survey.crs import select_operation
@@ -145,13 +145,13 @@ def test_gdal_algorithm_probe_never_raises(monkeypatch: pytest.MonkeyPatch) -> N
         raise tools.subprocess.TimeoutExpired(["gdal"], 30)
 
     monkeypatch.setattr(tools.subprocess, "run", hang)
-    assert tools._gdal_algorithm_ok("calc") is False
+    assert tools.gdal_algorithm_ok("calc") is False
 
     def broken(*_a, **_kw):  # type: ignore[no-untyped-def]
         raise PermissionError("not executable")
 
     monkeypatch.setattr(tools.subprocess, "run", broken)
-    assert tools._gdal_algorithm_ok("calc") is False
+    assert tools.gdal_algorithm_ok("calc") is False
 
 
 def test_a_missing_working_directory_is_not_reported_as_a_missing_tool(tmp_path) -> None:  # type: ignore[no-untyped-def]
