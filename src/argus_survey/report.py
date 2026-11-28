@@ -517,6 +517,8 @@ def dod_lod_kind(s: JobSidecar, c: ChangeReport) -> str | None:
     own = f"dod_{c.surface}_lod"
     if own in s.products:
         return own
+    if "dod_lod" not in s.products:  # no LoD raster this time (not computed, failed or pruned)
+        return None
     latest = s.change.surface if s.change else (s.changes[-1].surface if s.changes else c.surface)
     return "dod_lod" if c.surface == latest else None
 

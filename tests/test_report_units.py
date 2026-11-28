@@ -61,6 +61,15 @@ def test_a_change_never_borrows_another_surface_dod() -> None:
     assert rep.dod_lod_kind(legacy, dtm) == "dod_lod"
 
 
+def test_a_change_without_an_lod_raster_draws_none() -> None:
+    from argus_survey.models import ChangeReport, JobSidecar
+
+    dsm = ChangeReport.model_construct(surface="dsm")
+    assert rep.dod_lod_kind(JobSidecar.model_construct(products={}, change=dsm, changes=[dsm]), dsm) is None
+    bare = JobSidecar.model_construct(products={"dod": object()}, change=None, changes=[])  # neither change nor changes
+    assert rep.dod_lod_kind(bare, dsm) is None
+
+
 def test_coordinate_epoch_is_formatted() -> None:
     assert rep.e(2020.0) == "2020.0"
 
