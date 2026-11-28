@@ -36,7 +36,7 @@ x-survey: &survey
     - {type: bind, source: "${SURVEY_JOBS_HOST:-./data/jobs}", target: /data/jobs, bind: {create_host_path: false}}
 
 services:
-  survey:
+  survey:  # nosemgrep: service-peer-label  one-shot CLI (`compose run --rm survey <command>`), serves nothing; the peer is `serve`
     <<: *survey
     profiles: [cli]  # one-shot: `docker compose run --rm survey <command>`; never started by `up`
     entrypoint: [argus-survey]
@@ -65,7 +65,7 @@ services:
       start_period: 20s
       start_interval: 2s
 
-  test:
+  test:  # nosemgrep: service-peer-label  test container: runs the suite once, then exits
     image: argus-survey:test
     pull_policy: build
     build:
